@@ -1,0 +1,66 @@
+services:
+  eos-mongodb:
+    image: mongo:jammy
+    container_name: eos-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${EOS_MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${EOS_MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    networks:
+      - eos_network
+    volumes:
+      - mongodb_data:/data/db
+
+  eos-minio:
+    image: minio/minio:latest
+    container_name: eos-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${EOS_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${EOS_MINIO_ROOT_PASSWORD}
+    ports:
+      - "9004:9000"
+      - "9005:9001"
+    networks:
+      - eos_network
+    volumes:
+      - minio_data:/data
+    command: server --console-address ":9001" /data
+
+  eos-budibase:
+    image: budibase/budibase:latest
+    container_name: eos-budibase
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      JWT_SECRET: ${BB_JWT_SECRET}
+      MINIO_ACCESS_KEY: ${BB_MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${BB_MINIO_SECRET_KEY}
+      REDIS_PASSWORD: ${BB_REDIS_PASSWORD}
+      COUCHDB_USER: ${BB_COUCHDB_USER}
+      COUCHDB_PASSWORD: ${BB_COUCHDB_PASSWORD}
+      INTERNAL_API_KEY: ${BB_INTERNAL_API_KEY}
+      BB_ADMIN_USER_EMAIL: ${BB_ADMIN_USER_EMAIL}
+      BB_ADMIN_USER_PASSWORD: ${BB_ADMIN_USER_PASSWORD}
+    networks:
+      - eos_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - budibase_data:/data
+
+networks:
+  eos_network:
+    name: eos_network
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  minio_data:
+    driver: local
+  budibase_data:
+    driver: local

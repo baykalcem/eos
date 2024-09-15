@@ -1,0 +1,61 @@
+type: abstract_experiment
+description: An abstract experiment for testing
+
+labs:
+  - abstract_lab
+
+tasks:
+  - id: A
+    type: Noop
+    devices:
+      - lab_id: abstract_lab
+        id: D2
+
+  - id: B
+    type: Noop
+    dependencies: [ "A" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D1
+
+  - id: C
+    type: Noop
+    dependencies: [ "A" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D3
+
+  - id: D
+    type: Noop
+    dependencies: [ "A" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D1
+
+  - id: E
+    type: Noop
+    dependencies: [ "B" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D3
+
+  - id: F
+    type: Noop
+    dependencies: [ "C" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D2
+
+  - id: G
+    type: Noop
+    dependencies: [ "D", "E", "F" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D5
+
+  - id: H
+    type: Noop
+    dependencies: [ "G" ]
+    devices:
+      - lab_id: abstract_lab
+        id: D6

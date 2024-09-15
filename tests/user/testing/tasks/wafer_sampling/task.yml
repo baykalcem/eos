@@ -1,0 +1,15 @@
+type: Wafer Sampling
+description: Perform wafer sampling with a cartesian robot and pump/valve system.
+
+device_types:
+  - cartesian_robot
+
+input_parameters:
+  wafer_spot:
+    type: list
+    element_type: integer
+    length: 2
+    min: [ -10, -10 ]
+    max: [ 10, 10 ]
+    value: [ 0, 0 ]
+    description: The coordinates of the wafer spot in the wafer station.

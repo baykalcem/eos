@@ -1,0 +1,2 @@
+class EosFileDbError(Exception):
+    pass

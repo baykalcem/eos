@@ -1,0 +1,21 @@
+type: Compute Multiplication Objective
+description: This task computes the objective for the optimize_multiplication experiment.
+
+device_types:
+  - analyzer
+
+input_parameters:
+  number:
+    type: integer
+    unit: none
+    description: The number to multiply.
+  product:
+    type: integer
+    unit: none
+    description: The final product.
+
+output_parameters:
+  objective:
+    type: integer
+    unit: none
+    description: The objective for the find_smallest_number experiment.

@@ -1,0 +1,131 @@
+type: small_lab
+description: A small laboratory for testing
+
+locations:
+  gc_1:
+    description: Gas Chromatography station 1
+    metadata:
+      map_coordinates: { x: 100, y: 32, rotation: 0 }
+      areas:
+        injection_port:
+          description: Injection port for the gas chromatograph
+
+  gc_2:
+    description: Gas Chromatography station 2
+    metadata:
+      map_coordinates: { x: 110, y: 32, rotation: 0 }
+      areas:
+        injection_port:
+          description: Injection port for the gas chromatograph
+
+  wafer_station:
+    description: Wafer processing station
+    metadata:
+      map_coordinates: { x: 120, y: 32, rotation: 0 }
+      areas:
+        wafer_stack:
+          description: Wafer storage
+        cartesian_robot_head:
+          description: Head of the cartesian robot that holds the wafer
+
+  mixing_station:
+    description: Station equipped with magnetic mixers for substance blending
+    metadata:
+      map_coordinates: { x: 140, y: 32, rotation: 0 }
+
+  substance_shelf:
+    description: Storage shelf for chemical substances
+    metadata:
+      map_coordinates: { x: 50, y: 10, rotation: 0 }
+
+  substance_fridge:
+    description: Refrigerated storage for temperature-sensitive substances
+    metadata:
+      map_coordinates: { x: 60, y: 10, rotation: 0 }
+
+  fetch_charging_station:
+    description: Charging station for the Fetch mobile manipulation robot
+    metadata:
+      map_coordinates: { x: 10, y: 10, rotation: 0 }
+
+devices:
+  general_computer:
+    description: General-purpose computer
+    type: computer
+    location: gc_1
+    computer: eos_computer
+
+  magnetic_mixer:
+    description: Mixer for substance blending
+    type: magnetic_mixer
+    location: mixing_station
+    computer: eos_computer
+
+  magnetic_mixer_2:
+    description: Mixer for substance blending
+    type: magnetic_mixer
+    location: mixing_station
+    computer: eos_computer
+
+  evaporator:
+    description: Evaporator for substance purification
+    type: evaporator
+    location: mixing_station
+    computer: eos_computer
+
+  substance_fridge:
+    description: Fridge for storing temperature-sensitive substances
+    type: fridge
+    location: substance_fridge
+    computer: eos_computer
+
+containers:
+  - type: beaker_250
+    location: substance_shelf
+    metadata:
+      capacity: 250
+    ids:
+      - ec1ca48cd5d14c0c8cde376476e0d98d
+      - 4d8488982b8e404c83465308f6211c25
+      - 8f55ee53aaf4429392993295476b03bc
+      - d29185534fee42749a9f13932dfcb7f2
+  - type: beaker_350
+    metadata:
+      capacity: 350
+    location: substance_shelf
+    ids:
+      - 257b4bf4f13d40a49b60cb20db6bdb8d
+      - 4803e4639b314026a68e7217c5869567
+      - ab0b94897b1e439e90446994c88f1208
+  - type: beaker_500
+    location: substance_shelf
+    metadata:
+      capacity: 500
+    ids:
+      - 026749f8f40342b38157f9824ae2f512
+      - acf829f859e04fee80d54a1ee918555d
+      - a3b958aea8bd435386cdcbab20a2d3ec
+      - 2fe219d41d55449781338ef45f7f49bc
+  - type: vial_20
+    location: substance_shelf
+    metadata:
+      capacity: 20
+    ids:
+      - 84eb17d61e884ffd9d1fdebcbad1532b
+      - daa8748a09ea4e91b32c764fa3e6a3c3
+      - d03d93b6ef114ffba7b5b217362458e4
+      - 51ba54eab0bd4fa08c7ec8dea2d52fa6
+      - e7b25d1ea6844754a55a6c4be2ebbb62
+      - 9c94fcdb276e4909aa0408e287e6986c
+      - b9a14b0e5ee24db0afdc633802698a57
+      - cb895e7a7b814bfab294be9f22a8dc2c
+      - dc8aadece2d64ea59baa1b28d1c62b7b
+      - b1f6cf664cd542e9857314f1470f9efe
+      - 3e128a03dfe44709bf6941032fe42038
+      - efb5ccbaf9b4465c90b1654fac690821
+  - type: flask_250
+    location: substance_shelf
+    metadata:
+      capacity: 250
+    ids:
+      - dd4703461198463e980de42a6034f8de

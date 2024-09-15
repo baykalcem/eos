@@ -1,0 +1,21 @@
+type: Multiplication
+description: This task takes a number and a factor and multiplies them together.
+
+device_types:
+  - multiplier
+
+input_parameters:
+  number:
+    type: integer
+    unit: none
+    description: The number to multiply.
+  factor:
+    type: integer
+    unit: none
+    description: The factor to multiply the number by.
+
+output_parameters:
+  product:
+    type: integer
+    unit: none
+    description: The product of the number and the factor.

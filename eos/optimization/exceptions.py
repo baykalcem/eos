@@ -1,0 +1,2 @@
+class EosCampaignOptimizerDomainError(Exception):
+    pass

@@ -1,0 +1,16 @@
+configuration_manager:
+  user_dir: tests/user
+
+db_manager:
+  db_credentials:
+    host: localhost
+    port: 27017
+    username: eos-user
+    password: eos-password
+
+file_db_manager:
+  file_db_credentials:
+    host: localhost
+    port: 9004
+    username: eos-user
+    password: eos-password

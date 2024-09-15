@@ -1,0 +1,151 @@
+[project]
+name = "eos"
+version = "0.3.0"
+description = "The Experiment Orchestration System (EOS) is a comprehensive software framework and runtime for laboratory automation."
+keywords = ["automation", "science", "lab", "experiment", "orchestration", "distributed", "infrastructure"]
+authors = [
+    { name = "Angelos Angelopoulos", email = "aangelos@cs.unc.edu" }
+]
+license = { text = "BSD 3-Clause" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python",
+    "Typing :: Typed",
+    "Intended Audience :: Science/Research",
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ray[default]~=2.35.0",
+    "typer~=0.12.5",
+    "rich~=13.8.1",
+    "omegaconf~=2.3.0",
+    "jinja2~=3.1.4",
+    "PyYAML~=6.0.2",
+    "networkx~=3.3.0",
+    "pymongo~=4.8.0",
+    "pydantic~=2.9.1",
+    "bofire[optimization]~=0.0.13",
+    "pandas~=2.2.2",
+    "numpy~=1.26.2",
+    "litestar[standard]~=2.11.0",
+    "minio~=7.2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "black",
+]
+docs = [
+    "sphinx",
+    "sphinx-autobuild",
+    "sphinx-copybutton",
+    "sphinx-design",
+    "sphinx-click",
+    "pydata-sphinx-theme",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm.build]
+includes = ["eos"]
+
+[tool.pdm.scripts]
+test = "pytest"
+test-with-cov = "pytest --cov=eos"
+cov-report = "coverage html"
+lint = "ruff check eos tests"
+format = "black ."
+docs-build = "sphinx-build docs docs/_build"
+docs-build-gh = { shell = "sphinx-build docs docs/_build && touch docs/_build/.nojekyll" }
+docs-serve = "sphinx-autobuild docs docs/_build/ -j auto --watch eos --watch docs --port 8002"
+
+[project.scripts]
+eos = "eos.eos:eos_app"
+
+[tool.black]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+
+[tool.ruff]
+include = [
+    "{eos,tests}/**/*.py",
+    "pyproject.toml"
+]
+target-version = "py310"
+line-length = 120
+
+lint.mccabe.max-complexity = 14
+lint.isort.known-first-party = ["eos", "tests"]
+
+lint.select = [
+    "A", # flake8-builtins
+    "ANN", # flake8-annotations
+    "ASYNC", # flake8-async
+    "B", # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "C90", # mccabe
+    "DTZ", # flake8-datetimez
+    "E", # pycodestyle errors
+    "ERA", # eradicate
+    "EXE", # flake8-executable
+    "F", # pyflakes
+    "G", # flake8-logging-format
+    "I", # isort
+    "ICN", # flake8-import-conventions
+    "ISC", # flake8-implicit-str-concat
+    "N", # pep8-naming
+    "PIE", # flake8-pie
+    "PLC", # pylint - convention
+    "PT", # flake8-pytest
+    "PLE", # pylint - error
+    "PLR", # pylint - refactor
+    "PLW", # pylint - warning
+    "PTH", # flake8-use-pathlib
+    "Q", # flake8-quotes
+    "RET", # flake8-return
+    "RUF", # Ruff-specific rules
+    "S", # flake8-bandit
+    "SIM", # flake8-simplify
+    "T10", # flake8-debugger
+    "T20", # flake8-print
+    "TCH", # flake8-type-checking
+    "TID", # flake8-tidy-imports
+    "UP", # pyupgrade
+    "W", # pycodestyle - warning
+    "YTT", # flake8-2020
+]
+lint.ignore = ["I001", "ANN001", "ANN002", "ANN003", "ANN101", "ANN204", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.*" = [
+    "S",
+    "S101",
+    "I001",
+    "F405",
+    "F403",
+    "T201",
+    "D",
+    "ANN",
+    "PT001",
+    "PT004",
+    "PT023",
+    "PLR0913",
+    "PLR2004",
+]

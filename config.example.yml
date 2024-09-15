@@ -1,0 +1,27 @@
+user_dir: ./user
+labs:
+  - lab1
+  - lab2
+experiments:
+  - experiment1
+  - experiment2
+log_level: INFO
+
+# EOS orchestrator's internal web API server configuration
+web_api:
+  host: localhost
+  port: 8070
+
+# EOS database configuration
+db:
+  host: localhost
+  port: 27017
+  username: ""
+  password: ""
+
+# EOS file database configuration
+file_db:
+  host: localhost
+  port: 9004
+  username: ""
+  password: ""

@@ -1,0 +1,33 @@
+type: optimize_multiplication
+description: An experiment for finding the smallest number that when multiplied by two factors yields 1024
+
+labs:
+  - multiplication_lab
+
+tasks:
+  - id: mult_1
+    type: Multiplication
+    devices:
+      - lab_id: multiplication_lab
+        id: multiplier
+    parameters:
+      number: eos_dynamic
+      factor: eos_dynamic
+  - id: mult_2
+    type: Multiplication
+    devices:
+      - lab_id: multiplication_lab
+        id: multiplier
+    dependencies: [ mult_1 ]
+    parameters:
+      number: mult_1.product
+      factor: eos_dynamic
+  - id: compute_multiplication_objective
+    type: Compute Multiplication Objective
+    devices:
+      - lab_id: multiplication_lab
+        id: analyzer
+    dependencies: [ mult_1, mult_2 ]
+    parameters:
+      number: mult_1.number
+      product: mult_2.product

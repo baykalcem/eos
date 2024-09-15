@@ -1,0 +1,22 @@
+type: abstract_lab
+description: An abstract laboratory with abstract devices for testing
+
+devices:
+  D1:
+    type: DT1
+    computer: eos_computer
+  D2:
+    type: DT2
+    computer: eos_computer
+  D3:
+    type: DT3
+    computer: eos_computer
+  D4:
+    type: DT4
+    computer: eos_computer
+  D5:
+    type: DT5
+    computer: eos_computer
+  D6:
+    type: DT6
+    computer: eos_computer
