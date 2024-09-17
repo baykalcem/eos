@@ -7,7 +7,7 @@ from eos.configuration.constants import (
     CAMPAIGN_OPTIMIZER_FILE_NAME,
     CAMPAIGN_OPTIMIZER_CREATION_FUNCTION_NAME,
 )
-from eos.configuration.package_manager import PackageManager
+from eos.configuration.package_manager import PackageManager, EntityType
 from eos.configuration.plugin_registries.plugin_registry import PluginRegistry, PluginRegistryConfig
 from eos.logging.logger import log
 from eos.optimization.abstract_sequential_optimizer import AbstractSequentialOptimizer
@@ -76,9 +76,8 @@ class CampaignOptimizerPluginRegistry(
             log.warning(f"No package found for experiment '{experiment_type}'.")
             return
 
-        optimizer_file = (
-            Path(experiment_package.experiments_dir) / experiment_type / self._config.implementation_file_name
-        )
+        optimizer_file = self._package_manager.get_entity_dir(experiment_type,
+                                                              EntityType.EXPERIMENT) / CAMPAIGN_OPTIMIZER_FILE_NAME
 
         if not Path(optimizer_file).exists():
             log.warning(

@@ -1,6 +1,4 @@
-import os
 from typing import TYPE_CHECKING
-
 
 from eos.configuration.exceptions import (
     EosConfigurationError,
@@ -57,10 +55,8 @@ class ConfigurationManager:
         all_labs = set()
 
         for package in self._package_manager.get_all_packages():
-            labs_dir = package.labs_dir
-            if labs_dir.is_dir():
-                package_labs = [d for d in os.listdir(labs_dir) if (labs_dir / d).is_dir()]
-                all_labs.update(package_labs)
+            package_labs = self._package_manager.get_labs_in_package(package.name)
+            all_labs.update(package_labs)
 
         return {lab: lab in self.labs for lab in all_labs}
 
@@ -132,10 +128,8 @@ class ConfigurationManager:
         all_experiments = set()
 
         for package in self._package_manager.get_all_packages():
-            experiments_dir = package.experiments_dir
-            if experiments_dir.is_dir():
-                package_experiments = [d for d in os.listdir(experiments_dir) if (experiments_dir / d).is_dir()]
-                all_experiments.update(package_experiments)
+            package_experiments = self._package_manager.get_experiments_in_package(package.name)
+            all_experiments.update(package_experiments)
 
         return {exp: exp in self.experiments for exp in all_experiments}
 

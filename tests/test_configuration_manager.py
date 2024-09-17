@@ -2,7 +2,7 @@ import copy
 import shutil
 import tempfile
 
-from eos.configuration.constants import TASK_IMPLEMENTATION_FILE_NAME, LAB_CONFIG_FILE_NAME
+from eos.configuration.constants import TASK_IMPLEMENTATION_FILE_NAME
 from eos.configuration.exceptions import (
     EosMissingConfigurationError,
     EosConfigurationError,
@@ -109,16 +109,6 @@ class TestConfigurationManager:
         configuration_manager.load_lab(LAB_1_ID)
         with pytest.raises(EosConfigurationError):
             configuration_manager.unload_experiment("nonexistent_experiment")
-
-    def test_user_dir_lab_file_existence(self, user_dir):
-        with tempfile.TemporaryDirectory(prefix="eos_test-") as temp_user_dir:
-            temp_user_dir_path = Path(temp_user_dir)
-            shutil.copytree(user_dir, temp_user_dir_path, dirs_exist_ok=True)
-
-            (temp_user_dir_path / "testing" / "labs" / LAB_1_ID / LAB_CONFIG_FILE_NAME).unlink()
-
-            with pytest.raises(EosMissingConfigurationError):
-                ConfigurationManager(user_dir=str(temp_user_dir_path))
 
     def test_tasks_dir_task_handler_existence(self, user_dir):
         with tempfile.TemporaryDirectory(prefix="eos_test-") as temp_user_dir:

@@ -69,12 +69,13 @@ class EntityConfigReader(Generic[T]):
     """
 
     @staticmethod
-    def read_entity_config(file_path: str, entity_type: EntityType) -> ConfigType:
+    def read_entity_config(user_dir: str, file_path: str, entity_type: EntityType) -> ConfigType:
         entity_info = ENTITY_INFO[entity_type]
-        return EntityConfigReader._read_config(file_path, entity_info.config_type, f"{entity_type.name}")
+        return EntityConfigReader._read_config(user_dir, file_path, entity_info.config_type, f"{entity_type.name}")
 
     @staticmethod
-    def read_all_entity_configs(base_dir: str, entity_type: EntityType) -> tuple[dict[str, ConfigType], dict[str, str]]:
+    def read_all_entity_configs(user_dir: str, base_dir: str, entity_type: EntityType) -> tuple[
+        dict[str, ConfigType], dict[str, str]]:
         entity_info = ENTITY_INFO[entity_type]
         configs = {}
         dirs_to_types = {}
@@ -87,7 +88,7 @@ class EntityConfigReader(Generic[T]):
             config_file_path = Path(root) / entity_info.config_file_name
 
             try:
-                structured_config = EntityConfigReader.read_entity_config(str(config_file_path), entity_type)
+                structured_config = EntityConfigReader.read_entity_config(user_dir, str(config_file_path), entity_type)
                 entity_type_name = structured_config.type
                 configs[entity_type_name] = structured_config
                 dirs_to_types[entity_subdir] = entity_type_name
@@ -104,9 +105,9 @@ class EntityConfigReader(Generic[T]):
         return configs, dirs_to_types
 
     @staticmethod
-    def _read_config(file_path: str, config_type: type[ConfigType], config_name: str) -> ConfigType:
+    def _read_config(user_dir: str, file_path: str, config_type: type[ConfigType], config_name: str) -> ConfigType:
         try:
-            config_data = EntityConfigReader._process_jinja_yaml(file_path)
+            config_data = EntityConfigReader._process_jinja_yaml(user_dir, file_path)
 
             structured_config = OmegaConf.merge(OmegaConf.structured(config_type), OmegaConf.create(config_data))
             _ = OmegaConf.to_object(structured_config)
@@ -122,7 +123,7 @@ class EntityConfigReader(Generic[T]):
             raise EosConfigurationError(f"Error processing {config_name} configuration: {e!s}") from e
 
     @staticmethod
-    def _process_jinja_yaml(file_path: str) -> dict[str, Any]:
+    def _process_jinja_yaml(user_dir: str, file_path: str) -> dict[str, Any]:
         """
         Process a YAML file with Jinja2 templating, without passing any variables.
 
@@ -139,7 +140,7 @@ class EntityConfigReader(Generic[T]):
 
         try:
             env = jinja2.Environment(
-                loader=jinja2.FileSystemLoader(Path(file_path).parents[3]),  # user directory
+                loader=jinja2.FileSystemLoader(Path(user_dir)),  # user directory
                 undefined=jinja2.StrictUndefined,
                 autoescape=True,
             )
@@ -171,7 +172,7 @@ class PackageDiscoverer:
             package_path = self.user_dir / item
 
             if package_path.is_dir():
-                packages[item] = Package(item, package_path)
+                packages[item] = Package(item, str(package_path))
 
         return packages
 
@@ -201,12 +202,12 @@ class PackageManager:
     def read_lab_config(self, lab_name: str) -> LabConfig:
         entity_location = self._get_entity_location(lab_name, EntityType.LAB)
         config_file_path = self._get_config_file_path(entity_location, EntityType.LAB)
-        return EntityConfigReader.read_entity_config(config_file_path, EntityType.LAB)
+        return EntityConfigReader.read_entity_config(self.user_dir, config_file_path, EntityType.LAB)
 
     def read_experiment_config(self, experiment_name: str) -> ExperimentConfig:
         entity_location = self._get_entity_location(experiment_name, EntityType.EXPERIMENT)
         config_file_path = self._get_config_file_path(entity_location, EntityType.EXPERIMENT)
-        return EntityConfigReader.read_entity_config(config_file_path, EntityType.EXPERIMENT)
+        return EntityConfigReader.read_entity_config(self.user_dir, config_file_path, EntityType.EXPERIMENT)
 
     def read_task_configs(self) -> tuple[dict[str, TaskSpecification], dict[str, str]]:
         return self._read_all_entity_configs(EntityType.TASK)
@@ -238,12 +239,61 @@ class PackageManager:
     def find_package_for_device(self, device_name: str) -> Package | None:
         return self._find_package_for_entity(device_name, EntityType.DEVICE)
 
+    def get_entity_dir(self, entity_name: str, entity_type: EntityType) -> Path:
+        entity_location = self._get_entity_location(entity_name, entity_type)
+        package = self.packages[entity_location.package_name]
+        return Path(getattr(package, f"{ENTITY_INFO[entity_type].dir_name}_dir") / entity_location.entity_path)
+
+    def get_experiments_in_package(self, package_name: str) -> list[str]:
+        package = self.get_package(package_name)
+        if not package:
+            raise EosMissingConfigurationError(f"Package '{package_name}' not found")
+
+        return [
+            entity_name
+            for entity_name, location in self.entity_indices[EntityType.EXPERIMENT].items()
+            if location.package_name == package_name
+        ]
+
+    def get_labs_in_package(self, package_name: str) -> list[str]:
+        package = self.get_package(package_name)
+        if not package:
+            raise EosMissingConfigurationError(f"Package '{package_name}' not found")
+
+        return [
+            entity_name
+            for entity_name, location in self.entity_indices[EntityType.LAB].items()
+            if location.package_name == package_name
+        ]
+
+    def get_tasks_in_package(self, package_name: str) -> list[str]:
+        package = self.get_package(package_name)
+        if not package:
+            raise EosMissingConfigurationError(f"Package '{package_name}' not found")
+
+        return [
+            entity_name
+            for entity_name, location in self.entity_indices[EntityType.TASK].items()
+            if location.package_name == package_name
+        ]
+
+    def get_devices_in_package(self, package_name: str) -> list[str]:
+        package = self.get_package(package_name)
+        if not package:
+            raise EosMissingConfigurationError(f"Package '{package_name}' not found")
+
+        return [
+            entity_name
+            for entity_name, location in self.entity_indices[EntityType.DEVICE].items()
+            if location.package_name == package_name
+        ]
+
     def add_package(self, package_name: str) -> None:
         package_path = Path(self.user_dir) / package_name
         if not package_path.is_dir():
             raise EosMissingConfigurationError(f"Package directory '{package_path}' does not exist")
 
-        new_package = Package(package_name, package_path)
+        new_package = Package(package_name, str(package_path))
         PackageValidator(self.user_dir, {package_name: new_package}).validate()
 
         self.packages[package_name] = new_package
@@ -317,7 +367,7 @@ class PackageManager:
                 EosMissingConfigurationError,
             )
 
-        return config_file_path
+        return str(config_file_path)
 
     def _read_all_entity_configs(self, entity_type: EntityType) -> tuple[dict[str, T], dict[str, str]]:
         all_configs = {}
@@ -326,7 +376,8 @@ class PackageManager:
             entity_dir = Path(getattr(package, f"{ENTITY_INFO[entity_type].dir_name}_dir"))
             if not entity_dir.is_dir():
                 continue
-            configs, dirs_to_types = EntityConfigReader.read_all_entity_configs(entity_dir, entity_type)
+            configs, dirs_to_types = EntityConfigReader.read_all_entity_configs(self.user_dir, str(entity_dir),
+                                                                                entity_type)
             all_configs.update(configs)
             all_dirs_to_types.update({Path(package.name) / k: v for k, v in dirs_to_types.items()})
         return all_configs, all_dirs_to_types
