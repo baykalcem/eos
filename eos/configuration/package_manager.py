@@ -94,10 +94,10 @@ class EntityConfigReader(Generic[T]):
                 dirs_to_types[entity_subdir] = entity_type_name
 
                 log.debug(
-                    f"Loaded {entity_type.name.lower()} specification from directory '{entity_subdir}' of type "
+                    f"Loaded {entity_type.name.capitalize()} specification from directory '{entity_subdir}' of type "
                     f"'{entity_type_name}'"
                 )
-                log.debug(f"{entity_type.name} configuration '{entity_type_name}': {structured_config}")
+                log.debug(f"{entity_type.name.capitalize()} configuration '{entity_type_name}': {structured_config}")
             except EosConfigurationError as e:
                 log.error(f"Error loading {entity_type.name.lower()} configuration from '{config_file_path}': {e}")
                 raise
@@ -348,7 +348,7 @@ class PackageManager:
     def _get_entity_location(self, entity_name: str, entity_type: EntityType) -> EntityLocationInfo:
         entity_location = self.entity_indices[entity_type].get(entity_name)
         if not entity_location:
-            raise EosMissingConfigurationError(f"{entity_type.name} '{entity_name}' not found")
+            raise EosMissingConfigurationError(f"{entity_type.name.capitalize()} '{entity_name}' not found")
         return entity_location
 
     def _get_config_file_path(self, entity_location: EntityLocationInfo, entity_type: EntityType) -> str:
@@ -362,8 +362,8 @@ class PackageManager:
 
         if not config_file_path.is_file():
             raise EosMissingConfigurationError(
-                f"{entity_type.name} file '{entity_info.config_file_name}' does not exist for "
-                f"{entity_type.name.lower()} '{entity_location.entity_path}'",
+                f"{entity_type.name.capitalize()} file '{entity_info.config_file_name}' does not exist for "
+                f"'{entity_location.entity_path}'",
                 EosMissingConfigurationError,
             )
 
