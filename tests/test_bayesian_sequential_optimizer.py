@@ -1,5 +1,5 @@
 import pandas as pd
-from bofire.data_models.acquisition_functions.acquisition_function import qNEI, qNEHVI
+from bofire.data_models.acquisition_functions.acquisition_function import qLogNEI, qLogNEHVI
 from bofire.data_models.enum import SamplingMethodEnum
 from bofire.data_models.features.continuous import ContinuousInput, ContinuousOutput
 from bofire.data_models.objectives.identity import MaximizeObjective, MinimizeObjective
@@ -15,7 +15,7 @@ class TestCampaignBayesianOptimizer:
             ],
             outputs=[ContinuousOutput(key="y", objective=MaximizeObjective(w=1.0))],
             constraints=[],
-            acquisition_function=qNEI(),
+            acquisition_function=qLogNEI(),
             num_initial_samples=5,
             initial_sampling_method=SamplingMethodEnum.SOBOL,
         )
@@ -40,7 +40,7 @@ class TestCampaignBayesianOptimizer:
                 ContinuousOutput(key="y2", objective=MinimizeObjective(w=1.0)),
             ],
             constraints=[],
-            acquisition_function=qNEHVI(),
+            acquisition_function=qLogNEHVI(),
             num_initial_samples=10,
             initial_sampling_method=SamplingMethodEnum.SOBOL,
         )

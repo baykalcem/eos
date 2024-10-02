@@ -1,3 +1,6 @@
+from eos.devices.exceptions import EosDeviceError
+
+
 class EosConfigurationError(Exception):
     pass
 
@@ -30,9 +33,17 @@ class EosTaskGraphError(Exception):
     pass
 
 
-class EosTaskHandlerClassNotFoundError(Exception):
+class EosTaskImplementationClassNotFoundError(Exception):
+    pass
+
+
+class EosCampaignOptimizerImplementationClassNotFoundError(Exception):
     pass
 
 
 class EosCampaignOptimizerNotFoundError(Exception):
+    pass
+
+
+class EosDeviceImplementationClassNotFoundError(EosDeviceError):
     pass

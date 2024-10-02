@@ -97,7 +97,7 @@ class Orchestrator(metaclass=Singleton):
         self._task_manager = TaskManager(self._configuration_manager, self._db_manager, self._file_db_manager)
         self._experiment_manager = ExperimentManager(self._configuration_manager, self._db_manager)
         self._campaign_manager = CampaignManager(self._configuration_manager, self._db_manager)
-        self._campaign_optimizer_manager = CampaignOptimizerManager(self._db_manager)
+        self._campaign_optimizer_manager = CampaignOptimizerManager(self._configuration_manager, self._db_manager)
 
         # Execution ###############################################
         self._task_executor = TaskExecutor(

@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING
 from eos.configuration.exceptions import (
     EosConfigurationError,
 )
-from eos.configuration.package_manager import PackageManager
+from eos.configuration.packages.entities import EntityType
+from eos.configuration.packages.package_manager import PackageManager
 from eos.configuration.plugin_registries.campaign_optimizer_plugin_registry import CampaignOptimizerPluginRegistry
 from eos.configuration.plugin_registries.device_plugin_registry import DevicePluginRegistry
 from eos.configuration.plugin_registries.task_plugin_registry import TaskPluginRegistry
@@ -55,7 +56,7 @@ class ConfigurationManager:
         all_labs = set()
 
         for package in self._package_manager.get_all_packages():
-            package_labs = self._package_manager.get_labs_in_package(package.name)
+            package_labs = self._package_manager.get_entities_in_package(package.name, EntityType.LAB)
             all_labs.update(package_labs)
 
         return {lab: lab in self.labs for lab in all_labs}
@@ -128,7 +129,7 @@ class ConfigurationManager:
         all_experiments = set()
 
         for package in self._package_manager.get_all_packages():
-            package_experiments = self._package_manager.get_experiments_in_package(package.name)
+            package_experiments = self._package_manager.get_entities_in_package(package.name, EntityType.EXPERIMENT)
             all_experiments.update(package_experiments)
 
         return {exp: exp in self.experiments for exp in all_experiments}

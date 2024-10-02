@@ -89,45 +89,43 @@ class TaskInputParameterValidator:
                 EosTaskValidationError,
             )
 
-    def _convert_value_type(self, value: Any, expected_type: ParameterType) -> Any:
-        if isinstance(value, expected_type.python_type()):
-            return value
+    @staticmethod
+    def _convert_value_type(value: Any, expected_type: ParameterType) -> Any:
+        result = None
 
-        if isinstance(value, ListConfig | DictConfig):
+        if isinstance(value, expected_type.python_type()):
+            result = value
+        elif isinstance(value, ListConfig | DictConfig):
             value = OmegaConf.to_object(value)
 
-        conversion_map = {
-            ParameterType.integer: int,
-            ParameterType.decimal: float,
-            ParameterType.string: str,
-            ParameterType.choice: str,
-        }
+        if result is None:
+            conversion_map = {
+                ParameterType.integer: int,
+                ParameterType.decimal: float,
+                ParameterType.string: str,
+                ParameterType.choice: str,
+            }
 
-        if expected_type in conversion_map:
-            return conversion_map[expected_type](value)
+            if expected_type in conversion_map:
+                result = conversion_map[expected_type](value)
+            elif expected_type == ParameterType.boolean:
+                if isinstance(value, bool):
+                    result = value
+                elif isinstance(value, str):
+                    v = value.strip().lower()
+                    if v == "true":
+                        result = True
+                    elif v == "false":
+                        result = False
+            elif expected_type == ParameterType.list and isinstance(value, list):
+                result = list(value)
+            elif expected_type == ParameterType.dictionary and isinstance(value, dict):
+                result = value
 
-        if expected_type == ParameterType.boolean:
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, str):
-                v = value.strip().lower()
-                if v == "true":
-                    return True
-                if v == "false":
-                    return False
-            raise ValueError(f"Cannot convert {value} to boolean")
+        if result is None:
+            raise ValueError(f"Cannot convert {value} to {expected_type}")
 
-        if expected_type == ParameterType.list:
-            if isinstance(value, list | tuple):
-                return list(value)
-            raise ValueError(f"Cannot convert {value} to list")
-
-        if expected_type == ParameterType.dictionary:
-            if isinstance(value, dict):
-                return value
-            raise ValueError(f"Cannot convert {value} to dictionary")
-
-        raise ValueError(f"Unsupported parameter type: {expected_type}")
+        return result
 
     def _validate_all_required_parameters_provided(self) -> None:
         """

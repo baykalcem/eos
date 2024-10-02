@@ -14,6 +14,7 @@ class BaseTask(ABC):
     ContainersType = dict[str, Container]
     FilesType = dict[str, bytes]
     OutputType = tuple[ParametersType, ContainersType, FilesType]
+    MAX_OUTPUT_LENGTH = 3
 
     def __init__(self, experiment_id: str, task_id: str) -> None:
         self._experiment_id = experiment_id
@@ -31,7 +32,7 @@ class BaseTask(ABC):
             if output:
                 output_parameters = output[0] if len(output) > 0 and output[0] is not None else {}
                 output_containers = output[1] if len(output) > 1 and output[1] is not None else {}
-                output_files = output[2] if len(output) == 3 and output[2] is not None else {}
+                output_files = output[2] if len(output) == BaseTask.MAX_OUTPUT_LENGTH and output[2] is not None else {}
 
             if containers:
                 output_containers = {**containers, **output_containers}

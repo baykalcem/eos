@@ -6,6 +6,7 @@ from eos.configuration.constants import TASK_IMPLEMENTATION_FILE_NAME
 from eos.configuration.exceptions import (
     EosMissingConfigurationError,
     EosConfigurationError,
+    EosTaskImplementationClassNotFoundError,
 )
 from tests.fixtures import *
 
@@ -110,12 +111,12 @@ class TestConfigurationManager:
         with pytest.raises(EosConfigurationError):
             configuration_manager.unload_experiment("nonexistent_experiment")
 
-    def test_tasks_dir_task_handler_existence(self, user_dir):
+    def test_nonexistent_task_implementation_class(self, user_dir):
         with tempfile.TemporaryDirectory(prefix="eos_test-") as temp_user_dir:
             shutil.copytree(user_dir, temp_user_dir, dirs_exist_ok=True)
 
             temp_tasks_dir_path = Path(temp_user_dir) / "testing" / "tasks"
             (temp_tasks_dir_path / "noop" / TASK_IMPLEMENTATION_FILE_NAME).unlink()
 
-            with pytest.raises(EosMissingConfigurationError):
+            with pytest.raises(EosTaskImplementationClassNotFoundError):
                 ConfigurationManager(user_dir=str(temp_user_dir))

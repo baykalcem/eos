@@ -102,7 +102,7 @@ async def handle_shutdown(
         log.info("Shutting down the orchestrator...")
         orchestrator.terminate()
 
-        log.info("Shutdown complete.")
+        log.info("EOS shut down.")
 
 
 async def run_all(orchestrator: Orchestrator, web_api_server: uvicorn.Server) -> None:
@@ -155,6 +155,7 @@ def start_orchestrator(
     orchestrator = Orchestrator(config.user_dir, db_credentials, file_db_credentials)
     orchestrator.load_labs(config.labs)
     orchestrator.load_experiments(config.experiments)
+    log.info("EOS initialized.")
 
     # Set up the web API server
     logging_config = LoggingConfig(

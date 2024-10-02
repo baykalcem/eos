@@ -6,10 +6,6 @@ class EosDeviceStateError(EosDeviceError):
     pass
 
 
-class EosDeviceClassNotFoundError(EosDeviceError):
-    pass
-
-
 class EosDeviceInitializationError(EosDeviceError):
     pass
 

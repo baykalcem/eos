@@ -1,11 +1,11 @@
-from bofire.data_models.acquisition_functions.acquisition_function import qNEI
+from bofire.data_models.acquisition_functions.acquisition_function import qLogNEI
 from bofire.data_models.enum import SamplingMethodEnum
 from bofire.data_models.features.continuous import ContinuousOutput
 from bofire.data_models.features.discrete import DiscreteInput
 from bofire.data_models.objectives.identity import MinimizeObjective
 
-from eos.optimization.sequential_bayesian_optimizer import BayesianSequentialOptimizer
 from eos.optimization.abstract_sequential_optimizer import AbstractSequentialOptimizer
+from eos.optimization.sequential_bayesian_optimizer import BayesianSequentialOptimizer
 
 
 def eos_create_campaign_optimizer() -> tuple[dict, type[AbstractSequentialOptimizer]]:
@@ -19,7 +19,7 @@ def eos_create_campaign_optimizer() -> tuple[dict, type[AbstractSequentialOptimi
             ContinuousOutput(key="compute_multiplication_objective.objective", objective=MinimizeObjective(w=1.0)),
         ],
         "constraints": [],
-        "acquisition_function": qNEI(),
+        "acquisition_function": qLogNEI(),
         "num_initial_samples": 5,
         "initial_sampling_method": SamplingMethodEnum.SOBOL,
     }

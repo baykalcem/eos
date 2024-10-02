@@ -1,9 +1,10 @@
 from eos.configuration.constants import DEVICE_CONFIG_FILE_NAME, DEVICE_IMPLEMENTATION_FILE_NAME
-from eos.configuration.package_manager import PackageManager
+from eos.configuration.exceptions import EosDeviceImplementationClassNotFoundError
+from eos.configuration.packages.entities import EntityType
+from eos.configuration.packages.package_manager import PackageManager
 from eos.configuration.plugin_registries.plugin_registry import PluginRegistry, PluginRegistryConfig
 from eos.configuration.spec_registries.device_specification_registry import DeviceSpecificationRegistry
 from eos.devices.base_device import BaseDevice
-from eos.devices.exceptions import EosDeviceClassNotFoundError
 
 
 class DevicePluginRegistry(PluginRegistry[BaseDevice, DeviceSpecificationRegistry]):
@@ -14,8 +15,8 @@ class DevicePluginRegistry(PluginRegistry[BaseDevice, DeviceSpecificationRegistr
             config_file_name=DEVICE_CONFIG_FILE_NAME,
             implementation_file_name=DEVICE_IMPLEMENTATION_FILE_NAME,
             class_suffix="Device",
-            error_class=EosDeviceClassNotFoundError,
-            directory_name="devices_dir",
+            not_found_exception_class=EosDeviceImplementationClassNotFoundError,
+            entity_type=EntityType.DEVICE,
         )
         super().__init__(package_manager, config)
 

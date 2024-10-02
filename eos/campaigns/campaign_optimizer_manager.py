@@ -3,7 +3,7 @@ import ray
 from ray.actor import ActorHandle
 
 from eos.campaigns.entities.campaign import CampaignSample
-from eos.configuration.plugin_registries.campaign_optimizer_plugin_registry import CampaignOptimizerPluginRegistry
+from eos.configuration.configuration_manager import ConfigurationManager
 from eos.logging.logger import log
 from eos.optimization.sequential_optimizer_actor import SequentialOptimizerActor
 from eos.persistence.db_manager import DbManager
@@ -15,11 +15,11 @@ class CampaignOptimizerManager:
     Responsible for managing the optimizers associated with experiment campaigns.
     """
 
-    def __init__(self, db_manager: DbManager):
+    def __init__(self, configuration_manager: ConfigurationManager, db_manager: DbManager):
         self._campaign_samples = MongoRepository("campaign_samples", db_manager)
         self._campaign_samples.create_indices([("campaign_id", 1), ("experiment_id", 1)], unique=True)
 
-        self._campaign_optimizer_plugin_registry = CampaignOptimizerPluginRegistry()
+        self._campaign_optimizer_plugin_registry = configuration_manager.campaign_optimizers
 
         self._optimizer_actors: dict[str, ActorHandle] = {}
 

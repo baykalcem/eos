@@ -7,7 +7,6 @@ from omegaconf import OmegaConf
 from ray import ObjectRef
 
 from eos.configuration.configuration_manager import ConfigurationManager
-from eos.configuration.plugin_registries.task_plugin_registry import TaskPluginRegistry
 from eos.containers.container_manager import ContainerManager
 from eos.containers.entities.container import Container
 from eos.devices.device_actor_references import DeviceRayActorReference, DeviceRayActorWrapperReferences
@@ -58,7 +57,7 @@ class TaskExecutor:
         self._container_manager = container_manager
         self._resource_allocation_manager = resource_allocation_manager
         self._configuration_manager = configuration_manager
-        self._task_plugin_registry = TaskPluginRegistry()
+        self._task_plugin_registry = configuration_manager.tasks
         self._task_validator = TaskValidator()
         self._task_input_parameter_caster = TaskInputParameterCaster()
 

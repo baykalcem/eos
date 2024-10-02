@@ -1,8 +1,7 @@
 LABS_DIR = "labs"
 EXPERIMENTS_DIR = "experiments"
-TASKS_DIR = "tasks"
 DEVICES_DIR = "devices"
-COMMON_DIR = "common"
+TASKS_DIR = "tasks"
 
 EXPERIMENT_CONFIG_FILE_NAME = "experiment.yml"
 LAB_CONFIG_FILE_NAME = "lab.yml"

@@ -256,9 +256,10 @@ def campaign_manager(
 
 @pytest.fixture
 def campaign_optimizer_manager(
+    configuration_manager,
     db_manager,
 ):
-    return CampaignOptimizerManager(db_manager)
+    return CampaignOptimizerManager(configuration_manager, db_manager)
 
 
 @pytest.fixture

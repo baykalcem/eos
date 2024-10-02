@@ -7,7 +7,9 @@ from eos.configuration.constants import (
     CAMPAIGN_OPTIMIZER_FILE_NAME,
     CAMPAIGN_OPTIMIZER_CREATION_FUNCTION_NAME,
 )
-from eos.configuration.package_manager import PackageManager, EntityType
+from eos.configuration.exceptions import EosCampaignOptimizerImplementationClassNotFoundError
+from eos.configuration.packages.entities import EntityType
+from eos.configuration.packages.package_manager import PackageManager
 from eos.configuration.plugin_registries.plugin_registry import PluginRegistry, PluginRegistryConfig
 from eos.logging.logger import log
 from eos.optimization.abstract_sequential_optimizer import AbstractSequentialOptimizer
@@ -28,8 +30,8 @@ class CampaignOptimizerPluginRegistry(
             config_file_name=None,  # Campaign optimizers don't have a separate config file
             implementation_file_name=CAMPAIGN_OPTIMIZER_FILE_NAME,
             class_suffix="",  # Campaign optimizers don't use a class suffix
-            error_class=Exception,  # Using generic Exception for simplicity
-            directory_name="experiments_dir",
+            not_found_exception_class=EosCampaignOptimizerImplementationClassNotFoundError,
+            entity_type=EntityType.EXPERIMENT,
         )
         super().__init__(package_manager, config)
 
@@ -71,13 +73,14 @@ class CampaignOptimizerPluginRegistry(
         Load the optimizer configuration function for the given experiment from the appropriate package.
         If the optimizer doesn't exist, log a warning and return without raising an error.
         """
-        experiment_package = self._package_manager.find_package_for_experiment(experiment_type)
+        experiment_package = self._package_manager.find_package_for_entity(experiment_type, EntityType.EXPERIMENT)
         if not experiment_package:
             log.warning(f"No package found for experiment '{experiment_type}'.")
             return
 
-        optimizer_file = self._package_manager.get_entity_dir(experiment_type,
-                                                              EntityType.EXPERIMENT) / CAMPAIGN_OPTIMIZER_FILE_NAME
+        optimizer_file = (
+            self._package_manager.get_entity_dir(experiment_type, EntityType.EXPERIMENT) / CAMPAIGN_OPTIMIZER_FILE_NAME
+        )
 
         if not Path(optimizer_file).exists():
             log.warning(

@@ -6,7 +6,6 @@ from ray.actor import ActorHandle
 
 from eos.configuration.configuration_manager import ConfigurationManager
 from eos.configuration.constants import EOS_COMPUTER_NAME
-from eos.configuration.plugin_registries.device_plugin_registry import DevicePluginRegistry
 from eos.devices.entities.device import Device, DeviceStatus
 from eos.devices.exceptions import EosDeviceStateError, EosDeviceInitializationError
 from eos.logging.batch_error_logger import batch_error, raise_batched_errors
@@ -26,7 +25,7 @@ class DeviceManager:
         self._devices = MongoRepository("devices", db_manager)
         self._devices.create_indices([("lab_id", 1), ("id", 1)], unique=True)
 
-        self._device_plugin_registry = DevicePluginRegistry()
+        self._device_plugin_registry = configuration_manager.devices
         self._device_actor_handles: dict[str, ActorHandle] = {}
         self._device_actor_computer_ips: dict[str, str] = {}
 
