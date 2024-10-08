@@ -1,5 +1,6 @@
 import threading
 from abc import ABC, abstractmethod, ABCMeta
+from enum import Enum
 from typing import Any
 
 from eos.devices.exceptions import (
@@ -9,7 +10,7 @@ from eos.devices.exceptions import (
 )
 
 
-class DeviceStatus:
+class DeviceStatus(Enum):
     DISABLED = "DISABLED"
     IDLE = "IDLE"
     BUSY = "BUSY"
@@ -20,9 +21,15 @@ def capture_exceptions(func: callable) -> callable:
     def wrapper(self, *args, **kwargs) -> Any:
         try:
             return func(self, *args, **kwargs)
+
+        except (
+            EosDeviceInitializationError,
+            EosDeviceCleanupError,
+        ) as e:
+            raise e
         except Exception as e:
             self._status = DeviceStatus.ERROR
-            raise EosDeviceError(f"Error in {func.__name__} in device {self._device_id}") from e
+            raise EosDeviceError(f"Error in the function '{func.__name__}' in device '{self._device_id}'.") from e
 
     return wrapper
 
@@ -70,6 +77,7 @@ class BaseDevice(ABC, metaclass=DeviceMeta):
         if "_status" not in self.__dict__:
             return
         if self._status and self._status != DeviceStatus.DISABLED:
+            self._status = DeviceStatus.DISABLED
             self.cleanup()
 
     def initialize(self, initialization_parameters: dict[str, Any]) -> None:
@@ -112,17 +120,15 @@ class BaseDevice(ABC, metaclass=DeviceMeta):
         """
         Enable the device. The status should be IDLE after calling this method.
         """
-        with self._lock:
-            if self._status == DeviceStatus.DISABLED:
-                self.initialize(self._initialization_parameters)
+        if self._status == DeviceStatus.DISABLED:
+            self.initialize(self._initialization_parameters)
 
     def disable(self) -> None:
         """
         Disable the device. The status should be DISABLED after calling this method.
         """
-        with self._lock:
-            if self._status != DeviceStatus.DISABLED:
-                self.cleanup()
+        if self._status != DeviceStatus.DISABLED:
+            self.cleanup()
 
     def report(self) -> dict[str, Any]:
         """
@@ -139,13 +145,16 @@ class BaseDevice(ABC, metaclass=DeviceMeta):
             "status": self._status,
         }
 
-    def get_id(self) -> str:
+    @property
+    def id(self) -> str:
         return self._device_id
 
-    def get_type(self) -> str:
+    @property
+    def type(self) -> str:
         return self._device_type
 
-    def get_status(self) -> str:
+    @property
+    def status(self) -> DeviceStatus:
         return self._status
 
     @abstractmethod

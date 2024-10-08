@@ -9,7 +9,7 @@ from ray import ObjectRef
 from eos.configuration.configuration_manager import ConfigurationManager
 from eos.containers.container_manager import ContainerManager
 from eos.containers.entities.container import Container
-from eos.devices.device_actor_references import DeviceRayActorReference, DeviceRayActorWrapperReferences
+from eos.devices.device_actor_wrapper_registry import DeviceActorReference, DeviceActorWrapperRegistry
 from eos.devices.device_manager import DeviceManager
 from eos.logging.logger import log
 from eos.resource_allocation.entities.resource_request import (
@@ -127,8 +127,8 @@ class TaskExecutor:
             self._resource_allocation_manager.process_active_requests()
 
         self._task_manager.cancel_task(experiment_id, task_id)
-        log.warning(f"EXP '{experiment_id}' - Cancelled task '{task_id}'.")
         del self._active_tasks[task_id]
+        log.warning(f"EXP '{experiment_id}' - Cancelled task '{task_id}'.")
 
     def _prepare_containers(self, execution_parameters: TaskExecutionParameters) -> dict[str, Container]:
         return {
@@ -163,9 +163,9 @@ class TaskExecutor:
         resource_request = self._create_resource_request(execution_parameters)
         return await self._request_resources(resource_request, execution_parameters.resource_allocation_timeout)
 
-    def _get_device_actor_references(self, task_parameters: TaskExecutionParameters) -> list[DeviceRayActorReference]:
+    def _get_device_actor_references(self, task_parameters: TaskExecutionParameters) -> list[DeviceActorReference]:
         return [
-            DeviceRayActorReference(
+            DeviceActorReference(
                 id=device.id,
                 lab_id=device.lab_id,
                 type=self._configuration_manager.labs[device.lab_id].devices[device.id].type,
@@ -194,12 +194,12 @@ class TaskExecutor:
         def _ray_execute_task(
             _experiment_id: str,
             _task_id: str,
-            _devices_actor_references: list[DeviceRayActorReference],
+            _devices_actor_references: list[DeviceActorReference],
             _parameters: dict[str, Any],
             _containers: dict[str, Container],
         ) -> tuple:
             task = task_class_type(_experiment_id, _task_id)
-            devices = DeviceRayActorWrapperReferences(_devices_actor_references)
+            devices = DeviceActorWrapperRegistry(_devices_actor_references)
             return task.execute(devices, _parameters, _containers)
 
         self._task_manager.start_task(experiment_id, task_id)

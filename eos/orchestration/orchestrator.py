@@ -37,7 +37,7 @@ from eos.persistence.service_credentials import ServiceCredentials
 from eos.resource_allocation.resource_allocation_manager import (
     ResourceAllocationManager,
 )
-from eos.scheduling.basic_scheduler import BasicScheduler
+from eos.scheduling.greedy_scheduler import GreedyScheduler
 from eos.tasks.entities.task import Task, TaskStatus
 from eos.tasks.on_demand_task_executor import OnDemandTaskExecutor
 from eos.tasks.task_executor import TaskExecutor
@@ -110,7 +110,7 @@ class Orchestrator(metaclass=Singleton):
         self._on_demand_task_executor = OnDemandTaskExecutor(
             self._task_executor, self._task_manager, self._container_manager
         )
-        self._scheduler = BasicScheduler(
+        self._scheduler = GreedyScheduler(
             self._configuration_manager,
             self._experiment_manager,
             self._task_manager,

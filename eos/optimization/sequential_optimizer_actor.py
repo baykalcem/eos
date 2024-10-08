@@ -25,3 +25,6 @@ class SequentialOptimizerActor(AbstractSequentialOptimizer):
 
     def get_output_names(self) -> list[str]:
         return self.optimizer.get_output_names()
+
+    def get_num_samples_reported(self) -> int:
+        return self.optimizer.get_num_samples_reported()

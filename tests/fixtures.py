@@ -26,7 +26,7 @@ from eos.resource_allocation.device_allocation_manager import DeviceAllocationMa
 from eos.resource_allocation.resource_allocation_manager import (
     ResourceAllocationManager,
 )
-from eos.scheduling.basic_scheduler import BasicScheduler
+from eos.scheduling.greedy_scheduler import GreedyScheduler
 from eos.tasks.task_executor import TaskExecutor
 from eos.tasks.task_manager import TaskManager
 
@@ -125,7 +125,6 @@ def experiment_graph(setup_lab_experiment):
 
 @pytest.fixture
 def clean_db(db_manager):
-    print("Cleaned up DB.")
     db_manager.clean_db()
 
 
@@ -135,7 +134,7 @@ def container_manager(setup_lab_experiment, configuration_manager, db_manager, c
 
 
 @pytest.fixture
-def device_manager(setup_lab_experiment, configuration_manager, db_manager, ray_cluster, clean_db):
+def device_manager(setup_lab_experiment, configuration_manager, db_manager, clean_db):
     device_manager = DeviceManager(configuration_manager, db_manager)
     device_manager.update_devices(loaded_labs=set(configuration_manager.labs.keys()))
     yield device_manager
@@ -167,7 +166,7 @@ def task_manager(setup_lab_experiment, configuration_manager, db_manager, file_d
     return TaskManager(configuration_manager, db_manager, file_db_manager)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
     ray.init(namespace="test-eos", ignore_reinit_error=True, resources={"eos-core": 1})
     yield
@@ -189,7 +188,7 @@ def task_executor(
 
 
 @pytest.fixture
-def basic_scheduler(
+def greedy_scheduler(
     setup_lab_experiment,
     configuration_manager,
     experiment_manager,
@@ -197,7 +196,7 @@ def basic_scheduler(
     device_manager,
     resource_allocation_manager,
 ):
-    return BasicScheduler(
+    return GreedyScheduler(
         configuration_manager, experiment_manager, task_manager, device_manager, resource_allocation_manager
     )
 
@@ -209,7 +208,7 @@ def experiment_executor(
     task_manager,
     container_manager,
     task_executor,
-    basic_scheduler,
+    greedy_scheduler,
     experiment_graph,
 ):
     experiment_id, experiment_type = request.param
@@ -223,7 +222,7 @@ def experiment_executor(
         task_manager=task_manager,
         container_manager=container_manager,
         task_executor=task_executor,
-        scheduler=basic_scheduler,
+        scheduler=greedy_scheduler,
     )
 
 
@@ -234,7 +233,7 @@ def experiment_executor_factory(
     task_manager,
     container_manager,
     task_executor,
-    basic_scheduler,
+    greedy_scheduler,
 ):
     return ExperimentExecutorFactory(
         configuration_manager=configuration_manager,
@@ -242,7 +241,7 @@ def experiment_executor_factory(
         task_manager=task_manager,
         container_manager=container_manager,
         task_executor=task_executor,
-        scheduler=basic_scheduler,
+        scheduler=greedy_scheduler,
     )
 
 

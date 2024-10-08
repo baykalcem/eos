@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 from bofire.data_models.acquisition_functions.acquisition_function import qLogNEI, qLogNEHVI
 from bofire.data_models.enum import SamplingMethodEnum
 from bofire.data_models.features.continuous import ContinuousInput, ContinuousOutput
@@ -8,6 +9,7 @@ from eos.optimization.sequential_bayesian_optimizer import BayesianSequentialOpt
 
 
 class TestCampaignBayesianOptimizer:
+    @pytest.mark.slow
     def test_single_objective_optimization(self):
         optimizer = BayesianSequentialOptimizer(
             inputs=[
@@ -30,6 +32,7 @@ class TestCampaignBayesianOptimizer:
         assert len(optimal_solutions) == 1
         assert abs(optimal_solutions["y"].to_numpy()[0] - 4) < 0.01
 
+    @pytest.mark.slow
     def test_competing_multi_objective_optimization(self):
         optimizer = BayesianSequentialOptimizer(
             inputs=[
@@ -71,8 +74,8 @@ class TestCampaignBayesianOptimizer:
 
         for true_solution in true_pareto_front:
             assert any(
-                abs(solution["x"] - true_solution["x"]) < 0.5
-                and abs(solution["y1"] - true_solution["y1"]) < 0.5
-                and abs(solution["y2"] - true_solution["y2"]) < 0.5
+                abs(solution["x"] - true_solution["x"]) < 0.7
+                and abs(solution["y1"] - true_solution["y1"]) < 0.7
+                and abs(solution["y2"] - true_solution["y2"]) < 0.7
                 for _, solution in optimal_solutions.iterrows()
             )

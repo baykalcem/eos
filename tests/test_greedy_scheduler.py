@@ -2,28 +2,28 @@ from tests.fixtures import *
 
 
 @pytest.fixture()
-def experiment_graph(configuration_manager, basic_scheduler):
+def experiment_graph(configuration_manager, greedy_scheduler):
     experiment = configuration_manager.experiments["abstract_experiment"]
     return ExperimentGraph(experiment)
 
 
 @pytest.mark.parametrize("setup_lab_experiment", [("abstract_lab", "abstract_experiment")], indirect=True)
-class TestBasicScheduler:
-    def test_register_experiment(self, basic_scheduler, experiment_graph, configuration_manager):
+class TestGreedyScheduler:
+    def test_register_experiment(self, greedy_scheduler, experiment_graph, configuration_manager):
         print(configuration_manager.device_specs)
-        basic_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
-        assert basic_scheduler._registered_experiments["experiment_1"] == (
+        greedy_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
+        assert greedy_scheduler._registered_experiments["experiment_1"] == (
             "abstract_experiment",
             experiment_graph,
         )
 
-    def test_unregister_experiment(self, basic_scheduler, experiment_graph):
-        basic_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
-        basic_scheduler.unregister_experiment("experiment_1")
-        assert "experiment_1" not in basic_scheduler._registered_experiments
+    def test_unregister_experiment(self, greedy_scheduler, experiment_graph):
+        greedy_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
+        greedy_scheduler.unregister_experiment("experiment_1")
+        assert "experiment_1" not in greedy_scheduler._registered_experiments
 
     @pytest.mark.asyncio
-    async def test_correct_schedule(self, basic_scheduler, experiment_graph, experiment_manager, task_manager):
+    async def test_correct_schedule(self, greedy_scheduler, experiment_graph, experiment_manager, task_manager):
         def complete_task(task_id, task_type):
             task_manager.create_task("experiment_1", task_id, task_type, [])
             task_manager.start_task("experiment_1", task_id)
@@ -46,28 +46,28 @@ class TestBasicScheduler:
 
         experiment_manager.create_experiment("experiment_1", "abstract_experiment")
         experiment_manager.start_experiment("experiment_1")
-        basic_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
+        greedy_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         process_and_assert(tasks, [("A", "abstract_lab", "D2")])
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         process_and_assert(tasks, [("B", "abstract_lab", "D1"), ("C", "abstract_lab", "D3")])
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         process_and_assert(
             tasks,
             [("D", "abstract_lab", "D1"), ("E", "abstract_lab", "D3"), ("F", "abstract_lab", "D2")],
         )
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         process_and_assert(tasks, [("G", "abstract_lab", "D5")])
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         process_and_assert(tasks, [("H", "abstract_lab", "D6")])
 
-        assert basic_scheduler.is_experiment_completed("experiment_1")
+        assert greedy_scheduler.is_experiment_completed("experiment_1")
 
-        tasks = await basic_scheduler.request_tasks("experiment_1")
+        tasks = await greedy_scheduler.request_tasks("experiment_1")
         assert len(tasks) == 0
         experiment_manager.complete_experiment("experiment_1")

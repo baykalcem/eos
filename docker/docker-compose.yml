@@ -1,6 +1,6 @@
 services:
   eos-mongodb:
-    image: mongo:jammy
+    image: mongo:noble
     container_name: eos-mongodb
     restart: unless-stopped
     environment:
@@ -14,7 +14,7 @@ services:
       - mongodb_data:/data/db
 
   eos-minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
     container_name: eos-minio
     restart: unless-stopped
     environment:
@@ -30,7 +30,7 @@ services:
     command: server --console-address ":9001" /data
 
   eos-budibase:
-    image: budibase/budibase:latest
+    image: budibase/budibase:2.32.12-sqs
     container_name: eos-budibase
     restart: unless-stopped
     ports:

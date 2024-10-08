@@ -2,14 +2,14 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from eos.containers.entities.container import Container
-from eos.devices.device_actor_references import DeviceRayActorWrapperReferences
+from eos.devices.device_actor_wrapper_registry import DeviceActorWrapperRegistry
 from eos.tasks.exceptions import EosTaskExecutionError
 
 
 class BaseTask(ABC):
     """Base class for all tasks in EOS."""
 
-    DevicesType = dict[str, DeviceRayActorWrapperReferences]
+    DevicesType = dict[str, DeviceActorWrapperRegistry]
     ParametersType = dict[str, Any]
     ContainersType = dict[str, Container]
     FilesType = dict[str, bytes]

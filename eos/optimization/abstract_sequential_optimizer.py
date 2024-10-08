@@ -52,3 +52,11 @@ class AbstractSequentialOptimizer(ABC):
 
         :return: A list of the names of the output parameter values.
         """
+
+    @abstractmethod
+    def get_num_samples_reported(self) -> int:
+        """
+        Get the number of samples reported to the optimizer.
+
+        :return: The number of samples reported to the optimizer.
+        """

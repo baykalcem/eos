@@ -1,6 +1,8 @@
 import asyncio
+from unittest.mock import patch
 
 from eos.experiments.entities.experiment import ExperimentStatus
+from eos.experiments.exceptions import EosExperimentExecutionError
 from eos.tasks.entities.task import TaskStatus
 from tests.fixtures import *
 
@@ -39,6 +41,7 @@ class TestExperimentExecutor:
         assert experiment.id == EXPERIMENT_ID
         assert experiment.status == ExperimentStatus.RUNNING
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_progress_experiment(self, experiment_executor, experiment_manager, task_manager):
         experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
@@ -79,9 +82,7 @@ class TestExperimentExecutor:
         assert mixing_output.parameters["mixing_time"] == DYNAMIC_PARAMETERS["mixing"]["time"]
 
     @pytest.mark.asyncio
-    async def test_resolve_input_parameter_references_and_dynamic_parameters(
-        self, experiment_executor, task_manager
-    ):
+    async def test_resolve_input_parameter_references_and_dynamic_parameters(self, experiment_executor, task_manager):
         experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
 
         experiment_completed = False
@@ -97,7 +98,43 @@ class TestExperimentExecutor:
         assert mixing_task.input.parameters["time"] == DYNAMIC_PARAMETERS["mixing"]["time"]
 
         # Check that the output parameter mixing time was assigned to the input parameter evaporation time
-        assert (
-            evaporation_task.input.parameters["evaporation_time"]
-            == mixing_result.parameters["mixing_time"]
+        assert evaporation_task.input.parameters["evaporation_time"] == mixing_result.parameters["mixing_time"]
+
+    @pytest.mark.parametrize(
+        "experiment_status",
+        [
+            ExperimentStatus.COMPLETED,
+            ExperimentStatus.SUSPENDED,
+            ExperimentStatus.CANCELLED,
+            ExperimentStatus.FAILED,
+            ExperimentStatus.RUNNING,
+        ],
+    )
+    def test_handle_existing_experiment(self, experiment_executor, experiment_manager, experiment_status):
+        experiment_manager.create_experiment(
+            EXPERIMENT_ID, EXPERIMENT_TYPE, experiment_executor._execution_parameters, {}, {}
         )
+        experiment_manager._set_experiment_status(EXPERIMENT_ID, experiment_status)
+
+        experiment_executor._execution_parameters.resume = False
+        with patch.object(experiment_executor, "_resume_experiment") as mock_resume:
+            if experiment_status in [
+                ExperimentStatus.COMPLETED,
+                ExperimentStatus.SUSPENDED,
+                ExperimentStatus.CANCELLED,
+                ExperimentStatus.FAILED,
+            ]:
+                with pytest.raises(EosExperimentExecutionError) as exc_info:
+                    experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+                assert experiment_status.name.lower() in str(exc_info.value)
+                mock_resume.assert_not_called()
+            else:
+                experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+                mock_resume.assert_not_called()
+
+        experiment_executor._execution_parameters.resume = True
+        with patch.object(experiment_executor, "_resume_experiment") as mock_resume:
+            experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+            mock_resume.assert_called_once()
+
+        assert experiment_executor._experiment_status == experiment_status

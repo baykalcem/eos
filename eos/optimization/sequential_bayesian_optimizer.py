@@ -17,8 +17,8 @@ from bofire.data_models.strategies.predictives.mobo import MoboStrategy
 from bofire.data_models.strategies.predictives.sobo import SoboStrategy
 from pandas import Series
 
-from eos.optimization.exceptions import EosCampaignOptimizerDomainError
 from eos.optimization.abstract_sequential_optimizer import AbstractSequentialOptimizer
+from eos.optimization.exceptions import EosCampaignOptimizerDomainError
 
 
 class BayesianSequentialOptimizer(AbstractSequentialOptimizer):
@@ -51,7 +51,7 @@ class BayesianSequentialOptimizer(AbstractSequentialOptimizer):
 
         self._generate_initial_samples: bool = self._num_initial_samples > 0
         self._initial_samples_df: pd.DataFrame | None = None
-        self._results_reported: int = 0
+        self._num_samples_reported: int = 0
 
         self._optimizer_data_model = (
             SoboStrategy(domain=self._domain, acquisition_function=acquisition_function)
@@ -61,7 +61,7 @@ class BayesianSequentialOptimizer(AbstractSequentialOptimizer):
         self._optimizer = strategies.map(data_model=self._optimizer_data_model)
 
     def sample(self, num_experiments: int = 1) -> pd.DataFrame:
-        if self._generate_initial_samples and self._results_reported < self._num_initial_samples:
+        if self._generate_initial_samples and self._num_samples_reported < self._num_initial_samples:
             if self._initial_samples_df is None:
                 self._generate_initial_samples_df()
 
@@ -89,7 +89,7 @@ class BayesianSequentialOptimizer(AbstractSequentialOptimizer):
         self._validate_sample(inputs_df, outputs_df)
         results_df = pd.concat([inputs_df, outputs_df], axis=1)
         self._optimizer.tell(results_df)
-        self._results_reported += len(results_df)
+        self._num_samples_reported += len(results_df)
 
     def get_optimal_solutions(self) -> pd.DataFrame:
         experiments = self._optimizer.experiments
@@ -136,6 +136,9 @@ class BayesianSequentialOptimizer(AbstractSequentialOptimizer):
 
     def get_output_names(self) -> list[str]:
         return self._output_names
+
+    def get_num_samples_reported(self) -> int:
+        return self._num_samples_reported
 
     def _get_output(self, output_name: str) -> OutputType:
         for output in self._domain.outputs.features:
