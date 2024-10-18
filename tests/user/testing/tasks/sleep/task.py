@@ -12,7 +12,7 @@ class SleepTask(BaseTask):
     ) -> BaseTask.OutputType:
         self.cancel_requested = False
 
-        sleep_time = parameters["sleep_time"]
+        sleep_time = parameters["time"]
         start_time = time.time()
         elapsed = 0
 

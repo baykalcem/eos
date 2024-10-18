@@ -22,5 +22,9 @@ class EosTaskExecutionError(EosTaskError):
     pass
 
 
+class EosTaskCancellationError(EosTaskError):
+    pass
+
+
 class EosTaskResourceAllocationError(EosTaskError):
     pass

@@ -1,13 +1,15 @@
+import asyncio
+
 import pandas as pd
 import ray
 from ray.actor import ActorHandle
 
 from eos.campaigns.entities.campaign import CampaignSample
+from eos.campaigns.repositories.campaign_samples_repository import CampaignSamplesRepository
 from eos.configuration.configuration_manager import ConfigurationManager
 from eos.logging.logger import log
 from eos.optimization.sequential_optimizer_actor import SequentialOptimizerActor
-from eos.persistence.db_manager import DbManager
-from eos.persistence.mongo_repository import MongoRepository
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
 
 
 class CampaignOptimizerManager:
@@ -15,13 +17,15 @@ class CampaignOptimizerManager:
     Responsible for managing the optimizers associated with experiment campaigns.
     """
 
-    def __init__(self, configuration_manager: ConfigurationManager, db_manager: DbManager):
-        self._campaign_samples = MongoRepository("campaign_samples", db_manager)
-        self._campaign_samples.create_indices([("campaign_id", 1), ("experiment_id", 1)], unique=True)
-
+    def __init__(self, configuration_manager: ConfigurationManager, db_interface: AsyncMongoDbInterface):
+        self._session_factory = db_interface.session_factory
         self._campaign_optimizer_plugin_registry = configuration_manager.campaign_optimizers
-
         self._optimizer_actors: dict[str, ActorHandle] = {}
+        self._campaign_samples = None
+
+    async def initialize(self, db_interface: AsyncMongoDbInterface) -> None:
+        self._campaign_samples = CampaignSamplesRepository(db_interface)
+        await self._campaign_samples.initialize()
 
         log.debug("Campaign optimizer manager initialized.")
 
@@ -67,7 +71,7 @@ class CampaignOptimizerManager:
         """
         return self._optimizer_actors[campaign_id]
 
-    def get_input_and_output_names(self, campaign_id: str) -> tuple[list[str], list[str]]:
+    async def get_input_and_output_names(self, campaign_id: str) -> tuple[list[str], list[str]]:
         """
         Get the input and output names from an optimizer associated with a campaign.
 
@@ -76,13 +80,13 @@ class CampaignOptimizerManager:
         """
         optimizer_actor = self._optimizer_actors[campaign_id]
 
-        input_names, output_names = ray.get(
-            [optimizer_actor.get_input_names.remote(), optimizer_actor.get_output_names.remote()]
+        input_names, output_names = await asyncio.gather(
+            optimizer_actor.get_input_names.remote(), optimizer_actor.get_output_names.remote()
         )
 
         return input_names, output_names
 
-    def record_campaign_samples(
+    async def record_campaign_samples(
         self,
         campaign_id: str,
         experiment_ids: list[str],
@@ -112,12 +116,12 @@ class CampaignOptimizerManager:
         ]
 
         for campaign_sample in campaign_samples:
-            self._campaign_samples.create(campaign_sample.model_dump())
+            await self._campaign_samples.create(campaign_sample.model_dump())
 
-    def delete_campaign_samples(self, campaign_id: str) -> None:
+    async def delete_campaign_samples(self, campaign_id: str) -> None:
         """
         Delete all campaign samples for a campaign.
 
         :param campaign_id: The ID of the campaign.
         """
-        self._campaign_samples.delete(campaign_id=campaign_id)
+        await self._campaign_samples.delete_many(campaign_id=campaign_id)

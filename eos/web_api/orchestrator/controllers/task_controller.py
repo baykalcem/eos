@@ -20,7 +20,7 @@ class TaskController(Controller):
     @post("/submit")
     @handle_exceptions("Failed to submit task")
     async def submit_task(self, data: SubmitTaskRequest, orchestrator: Orchestrator) -> Response:
-        await orchestrator.submit_task(
+        orchestrator.submit_task(
             data.task_config, data.resource_allocation_priority, data.resource_allocation_timeout
         )
         return Response(content=None, status_code=HTTP_201_CREATED)

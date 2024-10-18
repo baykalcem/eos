@@ -29,12 +29,13 @@ class OnDemandTaskExecutor:
 
         log.debug("On-demand task executor initialized.")
 
-    async def submit_task(
+    def submit_task(
         self,
         task_config: TaskConfig,
         resource_allocation_priority: int = 90,
         resource_allocation_timeout: int = 3600,
     ) -> None:
+        """Submit an on-demand task for execution."""
         task_id = task_config.id
         task_execution_parameters = TaskExecutionParameters(
             experiment_id=self.EXPERIMENT_ID,
@@ -48,24 +49,28 @@ class OnDemandTaskExecutor:
         )
         log.info(f"Submitted on-demand task '{task_id}'.")
 
-    async def cancel_task(self, task_id: str) -> None:
+    async def request_task_cancellation(self, task_id: str) -> None:
+        """Request cancellation of an on-demand task."""
         if task_id not in self._task_futures:
             raise EosTaskExecutionError(f"Cannot cancel non-existent on-demand task '{task_id}'.")
 
-        future = self._task_futures[task_id]
-        future.cancel()
         await self._task_executor.request_task_cancellation(self.EXPERIMENT_ID, task_id)
+        self._task_futures[task_id].cancel()
         del self._task_futures[task_id]
         log.info(f"Cancelled on-demand task '{task_id}'.")
 
     async def process_tasks(self) -> None:
+        """
+        Process the on-demand tasks that have been submitted.
+        This should be called periodically to check for task completion.
+        """
         completed_tasks = []
 
         for task_id, future in self._task_futures.items():
             if future.done():
                 try:
                     output = await future
-                    self._process_task_output(task_id, *output)
+                    await self._process_task_output(task_id, *output)
                 except asyncio.CancelledError:
                     log.info(f"On-demand task '{task_id}' was cancelled.")
                 except (EosTaskExecutionError, EosTaskValidationError, EosTaskStateError):
@@ -76,15 +81,16 @@ class OnDemandTaskExecutor:
         for task_id in completed_tasks:
             del self._task_futures[task_id]
 
-    def _process_task_output(
+    async def _process_task_output(
         self,
         task_id: str,
         output_parameters: dict[str, Any],
         output_containers: dict[str, Container],
         output_files: dict[str, bytes],
     ) -> None:
-        for container in output_containers.values():
-            self._container_manager.update_container(container)
+        await asyncio.gather(
+            *[self._container_manager.update_container(container) for container in output_containers.values()]
+        )
 
         task_output = TaskOutput(
             experiment_id=self.EXPERIMENT_ID,
@@ -97,6 +103,6 @@ class OnDemandTaskExecutor:
         for file_name, file_data in output_files.items():
             self._task_manager.add_task_output_file(self.EXPERIMENT_ID, task_id, file_name, file_data)
 
-        self._task_manager.add_task_output(self.EXPERIMENT_ID, task_id, task_output)
-        self._task_manager.complete_task(self.EXPERIMENT_ID, task_id)
+        await self._task_manager.add_task_output(self.EXPERIMENT_ID, task_id, task_output)
+        await self._task_manager.complete_task(self.EXPERIMENT_ID, task_id)
         log.info(f"EXP '{self.EXPERIMENT_ID}' - Completed task '{task_id}'.")

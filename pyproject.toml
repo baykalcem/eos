@@ -1,6 +1,6 @@
 [project]
 name = "eos"
-version = "0.3.0"
+version = "0.4.0"
 description = "The Experiment Orchestration System (EOS) is a comprehensive software framework and runtime for laboratory automation."
 keywords = ["automation", "science", "lab", "experiment", "orchestration", "distributed", "infrastructure"]
 authors = [
@@ -22,19 +22,20 @@ classifiers = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "ray[default]~=2.35.0",
+    "ray[default]~=2.37.0",
     "typer~=0.12.5",
     "rich~=13.8.1",
     "omegaconf~=2.3.0",
     "jinja2~=3.1.4",
     "PyYAML~=6.0.2",
-    "networkx~=3.3.0",
-    "pymongo~=4.8.0",
-    "pydantic~=2.9.1",
+    "networkx~=3.4.1",
+    "pymongo~=4.9.2",
+    "motor~=3.6.0",
+    "pydantic~=2.9.2",
     "bofire[optimization]~=0.0.13",
-    "pandas~=2.2.2",
+    "pandas~=2.2.3",
     "numpy~=1.26.2",
-    "litestar[standard]~=2.11.0",
+    "litestar[standard]~=2.12.1",
     "minio~=7.2.8",
 ]
 
@@ -85,6 +86,7 @@ testpaths = [
 markers = [
     "slow: mark tests as slow (deselect with '-m \"not slow\"')",
 ]
+asyncio_mode = "auto"
 
 [tool.ruff]
 include = [
@@ -151,4 +153,6 @@ lint.ignore = ["I001", "ANN001", "ANN002", "ANN003", "ANN101", "ANN204", "ANN401
     "PT023",
     "PLR0913",
     "PLR2004",
+    "F401",
+    "F811",
 ]

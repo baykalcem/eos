@@ -1,0 +1,13 @@
+type: File Generation
+description: Generates a file with random data.
+
+device_types:
+  - general_computer
+
+input_parameters:
+  content_length:
+    type: integer
+    unit: n/a
+    value: 10
+    min: 0
+    description: How many characters to generate in the file.

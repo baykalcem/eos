@@ -222,4 +222,4 @@ class ConfigurationManager:
 
         for experiment_name in experiments_to_remove:
             self.unload_experiment(experiment_name)
-            log.info(f"Unloaded experiment '{experiment_name}' as it was associated with lab(s) {lab_names}")
+            log.debug(f"Unloaded experiment '{experiment_name}' as it was associated with lab(s) {lab_names}")

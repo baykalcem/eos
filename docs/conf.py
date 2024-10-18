@@ -9,7 +9,7 @@
 project = "eos"
 copyright = "2024, UNC Robotics"
 author = "Angelos Angelopoulos"
-release = "0.3.0"
+release = "0.4.0"
 
 extensions = [
     "sphinx.ext.autosectionlabel",

@@ -16,7 +16,7 @@ from eos.scheduling.abstract_scheduler import AbstractScheduler
 from eos.scheduling.entities.scheduled_task import ScheduledTask
 from eos.tasks.entities.task import TaskOutput
 from eos.tasks.entities.task_execution_parameters import TaskExecutionParameters
-from eos.tasks.exceptions import EosTaskExecutionError
+from eos.tasks.exceptions import EosTaskExecutionError, EosTaskCancellationError
 from eos.tasks.task_executor import TaskExecutor
 from eos.tasks.task_input_resolver import TaskInputResolver
 from eos.tasks.task_manager import TaskManager
@@ -41,6 +41,7 @@ class ExperimentExecutor:
         self._experiment_type = experiment_type
         self._execution_parameters = execution_parameters
         self._experiment_graph = experiment_graph
+
         self._experiment_manager = experiment_manager
         self._task_manager = task_manager
         self._container_manager = container_manager
@@ -52,7 +53,7 @@ class ExperimentExecutor:
         self._task_output_futures: dict[str, asyncio.Task] = {}
         self._experiment_status = None
 
-    def start_experiment(
+    async def start_experiment(
         self,
         dynamic_parameters: dict[str, dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
@@ -60,11 +61,11 @@ class ExperimentExecutor:
         """
         Start the experiment and register the executor with the scheduler.
         """
-        experiment = self._experiment_manager.get_experiment(self._experiment_id)
+        experiment = await self._experiment_manager.get_experiment(self._experiment_id)
         if experiment:
-            self._handle_existing_experiment(experiment)
+            await self._handle_existing_experiment(experiment)
         else:
-            self._create_new_experiment(dynamic_parameters, metadata)
+            await self._create_new_experiment(dynamic_parameters, metadata)
 
         self._scheduler.register_experiment(
             experiment_id=self._experiment_id,
@@ -72,12 +73,12 @@ class ExperimentExecutor:
             experiment_graph=self._experiment_graph,
         )
 
-        self._experiment_manager.start_experiment(self._experiment_id)
+        await self._experiment_manager.start_experiment(self._experiment_id)
         self._experiment_status = ExperimentStatus.RUNNING
 
         log.info(f"{'Resumed' if self._execution_parameters.resume else 'Started'} experiment '{self._experiment_id}'.")
 
-    def _handle_existing_experiment(self, experiment: Experiment) -> None:
+    async def _handle_existing_experiment(self, experiment: Experiment) -> None:
         """
         Handle cases when the experiment already exists.
         """
@@ -99,13 +100,13 @@ class ExperimentExecutor:
             }
             status_handlers.get(self._experiment_status, lambda: None)()
         else:
-            self._resume_experiment()
+            await self._resume_experiment()
 
     async def cancel_experiment(self) -> None:
         """
         Cancel the experiment.
         """
-        experiment = self._experiment_manager.get_experiment(self._experiment_id)
+        experiment = await self._experiment_manager.get_experiment(self._experiment_id)
         if not experiment or experiment.status != ExperimentStatus.RUNNING:
             raise EosExperimentCancellationError(
                 f"Cannot cancel experiment '{self._experiment_id}' with status '{experiment.status}'. "
@@ -114,10 +115,12 @@ class ExperimentExecutor:
 
         log.warning(f"Cancelling experiment '{self._experiment_id}'...")
         self._experiment_status = ExperimentStatus.CANCELLED
-        self._experiment_manager.cancel_experiment(self._experiment_id)
-        self._scheduler.unregister_experiment(self._experiment_id)
-        await self._cancel_running_tasks()
 
+        await asyncio.gather(
+            self._experiment_manager.cancel_experiment(self._experiment_id),
+            self._scheduler.unregister_experiment(self._experiment_id),
+            self._cancel_running_tasks(),
+        )
         log.warning(f"Cancelled experiment '{self._experiment_id}'.")
 
     async def progress_experiment(self) -> bool:
@@ -130,32 +133,34 @@ class ExperimentExecutor:
             if self._experiment_status != ExperimentStatus.RUNNING:
                 return self._experiment_status == ExperimentStatus.CANCELLED
 
-            if self._scheduler.is_experiment_completed(self._experiment_id):
-                self._complete_experiment()
+            if await self._scheduler.is_experiment_completed(self._experiment_id):
+                await self._complete_experiment()
                 return True
 
-            self._process_completed_tasks()
+            await self._process_completed_tasks()
             await self._execute_tasks()
 
             return False
         except Exception as e:
-            self._fail_experiment()
+            await self._fail_experiment()
             raise EosExperimentExecutionError(f"Error executing experiment '{self._experiment_id}'") from e
 
-    def _resume_experiment(self) -> None:
+    async def _resume_experiment(self) -> None:
         """
         Resume an existing experiment.
         """
-        self._experiment_manager.delete_non_completed_tasks(self._experiment_id)
+        await self._experiment_manager.delete_non_completed_tasks(self._experiment_id)
         log.info(f"Experiment '{self._experiment_id}' resumed.")
 
-    def _create_new_experiment(self, dynamic_parameters: dict[str, dict[str, Any]], metadata: dict[str, Any]) -> None:
+    async def _create_new_experiment(
+        self, dynamic_parameters: dict[str, dict[str, Any]], metadata: dict[str, Any]
+    ) -> None:
         """
         Create a new experiment with the given parameters.
         """
         dynamic_parameters = dynamic_parameters or {}
         self._validate_dynamic_parameters(dynamic_parameters)
-        self._experiment_manager.create_experiment(
+        await self._experiment_manager.create_experiment(
             experiment_id=self._experiment_id,
             experiment_type=self._experiment_type,
             execution_parameters=self._execution_parameters,
@@ -173,36 +178,44 @@ class ExperimentExecutor:
         ]
         try:
             await asyncio.wait_for(asyncio.gather(*cancellation_futures), timeout=30)
+        except EosTaskCancellationError as e:
+            raise EosExperimentExecutionError(
+                f"Error cancelling tasks of experiment {self._experiment_id}. Some tasks may not have been cancelled."
+            ) from e
         except asyncio.TimeoutError as e:
             raise EosExperimentExecutionError(
                 f"Timeout while cancelling experiment {self._experiment_id}. Some tasks may not have been cancelled."
             ) from e
 
-    def _complete_experiment(self) -> None:
+    async def _complete_experiment(self) -> None:
         """
         Complete the experiment and clean up.
         """
-        self._scheduler.unregister_experiment(self._experiment_id)
-        self._experiment_manager.complete_experiment(self._experiment_id)
+        await asyncio.gather(
+            self._scheduler.unregister_experiment(self._experiment_id),
+            self._experiment_manager.complete_experiment(self._experiment_id),
+        )
         self._experiment_status = ExperimentStatus.COMPLETED
 
-    def _fail_experiment(self) -> None:
+    async def _fail_experiment(self) -> None:
         """
         Fail the experiment.
         """
-        self._scheduler.unregister_experiment(self._experiment_id)
-        self._experiment_manager.fail_experiment(self._experiment_id)
+        await asyncio.gather(
+            self._scheduler.unregister_experiment(self._experiment_id),
+            self._experiment_manager.fail_experiment(self._experiment_id),
+        )
         self._experiment_status = ExperimentStatus.FAILED
 
-    def _process_completed_tasks(self) -> None:
+    async def _process_completed_tasks(self) -> None:
         """
         Process the output of completed tasks.
         """
         completed_tasks = [task_id for task_id, future in self._task_output_futures.items() if future.done()]
         for task_id in completed_tasks:
-            self._process_task_output(task_id)
+            await self._process_task_output(task_id)
 
-    def _process_task_output(self, task_id: str) -> None:
+    async def _process_task_output(self, task_id: str) -> None:
         """
         Process the output of a single completed task.
         """
@@ -210,9 +223,9 @@ class ExperimentExecutor:
             result = self._task_output_futures[task_id].result()
             if result:
                 output_parameters, output_containers, output_files = result
-                self._update_containers(output_containers)
-                self._add_task_output(task_id, output_parameters, output_containers, output_files)
-            self._task_manager.complete_task(self._experiment_id, task_id)
+                await self._update_containers(output_containers)
+                await self._add_task_output(task_id, output_parameters, output_containers, output_files)
+            await self._task_manager.complete_task(self._experiment_id, task_id)
             log.info(f"EXP '{self._experiment_id}' - Completed task '{task_id}'.")
         except EosTaskExecutionError as e:
             raise EosExperimentTaskExecutionError(
@@ -222,14 +235,14 @@ class ExperimentExecutor:
             del self._task_output_futures[task_id]
             del self._current_task_execution_parameters[task_id]
 
-    def _update_containers(self, output_containers: dict[str, Any]) -> None:
+    async def _update_containers(self, output_containers: dict[str, Any]) -> None:
         """
         Update containers with task output.
         """
         for container in output_containers.values():
-            self._container_manager.update_container(container)
+            await self._container_manager.update_container(container)
 
-    def _add_task_output(
+    async def _add_task_output(
         self,
         task_id: str,
         output_parameters: dict[str, Any],
@@ -248,7 +261,7 @@ class ExperimentExecutor:
         )
         for file_name, file_data in output_files.items():
             self._task_manager.add_task_output_file(self._experiment_id, task_id, file_name, file_data)
-        self._task_manager.add_task_output(self._experiment_id, task_id, task_output)
+        await self._task_manager.add_task_output(self._experiment_id, task_id, task_output)
 
     async def _execute_tasks(self) -> None:
         """
@@ -264,7 +277,7 @@ class ExperimentExecutor:
         Execute a single task.
         """
         task_config = self._experiment_graph.get_task_config(scheduled_task.id)
-        task_config = self._task_input_resolver.resolve_task_inputs(self._experiment_id, task_config)
+        task_config = await self._task_input_resolver.resolve_task_inputs(self._experiment_id, task_config)
         task_execution_parameters = TaskExecutionParameters(
             task_id=scheduled_task.id,
             experiment_id=self._experiment_id,

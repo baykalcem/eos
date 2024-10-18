@@ -33,6 +33,7 @@ class CampaignExecutor:
         self._campaign_id = campaign_id
         self._experiment_type = experiment_type
         self._execution_parameters = execution_parameters
+
         self._campaign_manager = campaign_manager
         self._campaign_optimizer_manager = campaign_optimizer_manager
         self._task_manager = task_manager
@@ -46,7 +47,7 @@ class CampaignExecutor:
 
         self._campaign_status: CampaignStatus | None = None
 
-    def _setup_optimizer(self) -> None:
+    async def _setup_optimizer(self) -> None:
         if self._optimizer:
             return
 
@@ -56,7 +57,7 @@ class CampaignExecutor:
             self._execution_parameters.optimizer_computer_ip,
         )
         self._optimizer_input_names, self._optimizer_output_names = (
-            self._campaign_optimizer_manager.get_input_and_output_names(self._campaign_id)
+            await self._campaign_optimizer_manager.get_input_and_output_names(self._campaign_id)
         )
 
     def cleanup(self) -> None:
@@ -70,13 +71,13 @@ class CampaignExecutor:
         """
         Start the campaign or handle an existing campaign.
         """
-        campaign = self._campaign_manager.get_campaign(self._campaign_id)
+        campaign = await self._campaign_manager.get_campaign(self._campaign_id)
         if campaign:
             await self._handle_existing_campaign(campaign)
         else:
-            self._create_new_campaign()
+            await self._create_new_campaign()
 
-        self._campaign_manager.start_campaign(self._campaign_id)
+        await self._campaign_manager.start_campaign(self._campaign_id)
         self._campaign_status = CampaignStatus.RUNNING
         log.info(f"Started campaign '{self._campaign_id}'.")
 
@@ -87,7 +88,6 @@ class CampaignExecutor:
         self._campaign_status = campaign.status
 
         if not self._execution_parameters.resume:
-
             def _raise_error(status: str) -> None:
                 raise EosCampaignExecutionError(
                     f"Cannot start campaign '{self._campaign_id}' as it already exists and is '{status}'. "
@@ -104,27 +104,27 @@ class CampaignExecutor:
 
         await self._resume_campaign()
 
-    def _create_new_campaign(self) -> None:
+    async def _create_new_campaign(self) -> None:
         """
         Create a new campaign.
         """
-        self._campaign_manager.create_campaign(
+        await self._campaign_manager.create_campaign(
             campaign_id=self._campaign_id,
             experiment_type=self._experiment_type,
             execution_parameters=self._execution_parameters,
         )
 
         if self._execution_parameters.do_optimization:
-            self._setup_optimizer()
+            await self._setup_optimizer()
 
     async def _resume_campaign(self) -> None:
         """
         Resume an existing campaign.
         """
-        self._campaign_manager.delete_current_campaign_experiments(self._campaign_id)
+        await self._campaign_manager.delete_current_campaign_experiments(self._campaign_id)
 
         if self._execution_parameters.do_optimization:
-            self._setup_optimizer()
+            await self._setup_optimizer()
             await self._restore_optimizer_state()
 
         log.info(f"Campaign '{self._campaign_id}' resumed.")
@@ -133,7 +133,7 @@ class CampaignExecutor:
         """
         Restore the optimizer state for a resumed campaign.
         """
-        completed_experiment_ids = self._campaign_manager.get_campaign_experiment_ids(
+        completed_experiment_ids = await self._campaign_manager.get_campaign_experiment_ids(
             self._campaign_id, status=ExperimentStatus.COMPLETED
         )
 
@@ -150,7 +150,7 @@ class CampaignExecutor:
         """
         Cancel the campaign and all running experiments.
         """
-        campaign = self._campaign_manager.get_campaign(self._campaign_id)
+        campaign = await self._campaign_manager.get_campaign(self._campaign_id)
         if not campaign or campaign.status != CampaignStatus.RUNNING:
             raise EosCampaignExecutionError(
                 f"Cannot cancel campaign '{self._campaign_id}' with status "
@@ -158,7 +158,7 @@ class CampaignExecutor:
             )
 
         log.warning(f"Cancelling campaign '{self._campaign_id}'...")
-        self._campaign_manager.cancel_campaign(self._campaign_id)
+        await self._campaign_manager.cancel_campaign(self._campaign_id)
         self._campaign_status = CampaignStatus.CANCELLED
 
         await self._cancel_running_experiments()
@@ -194,18 +194,18 @@ class CampaignExecutor:
 
             await self._progress_experiments()
 
-            campaign = self._campaign_manager.get_campaign(self._campaign_id)
+            campaign = await self._campaign_manager.get_campaign(self._campaign_id)
             if self._is_campaign_completed(campaign):
                 if self._execution_parameters.do_optimization:
                     await self._compute_pareto_solutions()
-                self._campaign_manager.complete_campaign(self._campaign_id)
+                await self._campaign_manager.complete_campaign(self._campaign_id)
                 return True
 
             await self._create_experiments(campaign)
 
             return False
         except EosExperimentExecutionError as e:
-            self._campaign_manager.fail_campaign(self._campaign_id)
+            await self._campaign_manager.fail_campaign(self._campaign_id)
             self._campaign_status = CampaignStatus.FAILED
             raise EosCampaignExecutionError(f"Error executing campaign '{self._campaign_id}'") from e
 
@@ -225,8 +225,8 @@ class CampaignExecutor:
 
         for experiment_id in completed_experiments:
             del self._experiment_executors[experiment_id]
-            self._campaign_manager.delete_campaign_experiment(self._campaign_id, experiment_id)
-            self._campaign_manager.increment_iteration(self._campaign_id)
+            await self._campaign_manager.delete_campaign_experiment(self._campaign_id, experiment_id)
+            await self._campaign_manager.increment_iteration(self._campaign_id)
 
     async def _process_completed_experiments(self, completed_experiments: list[str]) -> None:
         """
@@ -234,7 +234,7 @@ class CampaignExecutor:
         """
         inputs_df, outputs_df = await self._collect_experiment_results(completed_experiments)
         await self._optimizer.report.remote(inputs_df, outputs_df)
-        self._campaign_optimizer_manager.record_campaign_samples(
+        await self._campaign_optimizer_manager.record_campaign_samples(
             self._campaign_id, completed_experiments, inputs_df, outputs_df
         )
 
@@ -248,11 +248,12 @@ class CampaignExecutor:
         for experiment_id in experiment_ids:
             for input_name in self._optimizer_input_names:
                 reference_task_id, parameter_name = input_name.split(".")
-                task = self._task_manager.get_task(experiment_id, reference_task_id)
+                task = await self._task_manager.get_task(experiment_id, reference_task_id)
                 inputs[input_name].append(float(task.input.parameters[parameter_name]))
             for output_name in self._optimizer_output_names:
                 reference_task_id, parameter_name = output_name.split(".")
-                output_parameters = self._task_manager.get_task_output(experiment_id, reference_task_id).parameters
+                task_output = await self._task_manager.get_task_output(experiment_id, reference_task_id)
+                output_parameters = task_output.parameters
                 outputs[output_name].append(float(output_parameters[parameter_name]))
 
         return pd.DataFrame(inputs), pd.DataFrame(outputs)
@@ -271,9 +272,9 @@ class CampaignExecutor:
             experiment_executor = self._experiment_executor_factory.create(
                 new_experiment_id, self._experiment_type, experiment_execution_parameters
             )
-            self._campaign_manager.add_campaign_experiment(self._campaign_id, new_experiment_id)
+            await self._campaign_manager.add_campaign_experiment(self._campaign_id, new_experiment_id)
             self._experiment_executors[new_experiment_id] = experiment_executor
-            experiment_executor.start_experiment(experiment_dynamic_parameters)
+            await experiment_executor.start_experiment(experiment_dynamic_parameters)
 
     async def _get_experiment_parameters(self, iteration: int) -> dict[str, Any]:
         """
@@ -324,7 +325,7 @@ class CampaignExecutor:
         try:
             pareto_solutions_df = await self._optimizer.get_optimal_solutions.remote()
             pareto_solutions = pareto_solutions_df.to_dict(orient="records")
-            self._campaign_manager.set_pareto_solutions(self._campaign_id, pareto_solutions)
+            await self._campaign_manager.set_pareto_solutions(self._campaign_id, pareto_solutions)
         except Exception as e:
             raise EosCampaignExecutionError(f"CMP '{self._campaign_id}' - Error computing Pareto solutions.") from e
 

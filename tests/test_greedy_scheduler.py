@@ -17,17 +17,18 @@ class TestGreedyScheduler:
             experiment_graph,
         )
 
-    def test_unregister_experiment(self, greedy_scheduler, experiment_graph):
+    @pytest.mark.asyncio
+    async def test_unregister_experiment(self, greedy_scheduler, experiment_graph):
         greedy_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
-        greedy_scheduler.unregister_experiment("experiment_1")
+        await greedy_scheduler.unregister_experiment("experiment_1")
         assert "experiment_1" not in greedy_scheduler._registered_experiments
 
     @pytest.mark.asyncio
     async def test_correct_schedule(self, greedy_scheduler, experiment_graph, experiment_manager, task_manager):
-        def complete_task(task_id, task_type):
-            task_manager.create_task("experiment_1", task_id, task_type, [])
-            task_manager.start_task("experiment_1", task_id)
-            task_manager.complete_task("experiment_1", task_id)
+        async def complete_task(task_id, task_type):
+            await task_manager.create_task("experiment_1", task_id, task_type, [])
+            await task_manager.start_task("experiment_1", task_id)
+            await task_manager.complete_task("experiment_1", task_id)
 
         def get_task_if_exists(tasks, task_id):
             return next((task for task in tasks if task.id == task_id), None)
@@ -37,36 +38,36 @@ class TestGreedyScheduler:
             assert task.devices[0].lab_id == device_lab_id
             assert task.devices[0].id == device_id
 
-        def process_and_assert(tasks, expected_tasks):
+        async def process_and_assert(tasks, expected_tasks):
             assert len(tasks) == len(expected_tasks)
             for task_id, device_lab_id, device_id in expected_tasks:
                 task = get_task_if_exists(tasks, task_id)
                 assert_task(task, task_id, device_lab_id, device_id)
-                complete_task(task_id, "Noop")
+                await complete_task(task_id, "Noop")
 
-        experiment_manager.create_experiment("experiment_1", "abstract_experiment")
-        experiment_manager.start_experiment("experiment_1")
+        await experiment_manager.create_experiment("experiment_1", "abstract_experiment")
+        await experiment_manager.start_experiment("experiment_1")
         greedy_scheduler.register_experiment("experiment_1", "abstract_experiment", experiment_graph)
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
-        process_and_assert(tasks, [("A", "abstract_lab", "D2")])
+        await process_and_assert(tasks, [("A", "abstract_lab", "D2")])
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
-        process_and_assert(tasks, [("B", "abstract_lab", "D1"), ("C", "abstract_lab", "D3")])
+        await process_and_assert(tasks, [("B", "abstract_lab", "D1"), ("C", "abstract_lab", "D3")])
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
-        process_and_assert(
+        await process_and_assert(
             tasks,
             [("D", "abstract_lab", "D1"), ("E", "abstract_lab", "D3"), ("F", "abstract_lab", "D2")],
         )
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
-        process_and_assert(tasks, [("G", "abstract_lab", "D5")])
+        await process_and_assert(tasks, [("G", "abstract_lab", "D5")])
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
-        process_and_assert(tasks, [("H", "abstract_lab", "D6")])
+        await process_and_assert(tasks, [("H", "abstract_lab", "D6")])
 
-        assert greedy_scheduler.is_experiment_completed("experiment_1")
+        assert await greedy_scheduler.is_experiment_completed("experiment_1")
 
         tasks = await greedy_scheduler.request_tasks("experiment_1")
         assert len(tasks) == 0

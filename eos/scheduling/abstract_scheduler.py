@@ -16,7 +16,7 @@ class AbstractScheduler(ABC):
         """
 
     @abstractmethod
-    def unregister_experiment(self, experiment_id: str) -> None:
+    async def unregister_experiment(self, experiment_id: str) -> None:
         """
         Unregister an experiment from the scheduler.
 
@@ -33,7 +33,7 @@ class AbstractScheduler(ABC):
         """
 
     @abstractmethod
-    def is_experiment_completed(self, experiment_id: str) -> bool:
+    async def is_experiment_completed(self, experiment_id: str) -> bool:
         """
         Check if an experiment has been completed.
 

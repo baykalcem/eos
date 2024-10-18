@@ -18,39 +18,35 @@ from eos.experiments.experiment_executor import ExperimentExecutor
 from eos.experiments.experiment_executor_factory import ExperimentExecutorFactory
 from eos.experiments.experiment_manager import ExperimentManager
 from eos.logging.logger import log
-from eos.persistence.db_manager import DbManager
-from eos.persistence.file_db_manager import FileDbManager
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
+from eos.persistence.file_db_interface import FileDbInterface
 from eos.persistence.service_credentials import ServiceCredentials
-from eos.resource_allocation.container_allocation_manager import ContainerAllocationManager
-from eos.resource_allocation.device_allocation_manager import DeviceAllocationManager
+from eos.resource_allocation.container_allocator import ContainerAllocator
+from eos.resource_allocation.device_allocator import DeviceAllocator
 from eos.resource_allocation.resource_allocation_manager import (
     ResourceAllocationManager,
 )
 from eos.scheduling.greedy_scheduler import GreedyScheduler
+from eos.tasks.on_demand_task_executor import OnDemandTaskExecutor
 from eos.tasks.task_executor import TaskExecutor
 from eos.tasks.task_manager import TaskManager
 
 log.set_level("INFO")
 
 
-def load_test_config(config_name):
-    config_path = Path(__file__).resolve().parent / "test_config.yaml"
+def load_test_config():
+    config_path = Path(__file__).resolve().parent / "test_config.yml"
 
     if not config_path.exists():
         raise FileNotFoundError(f"Test config file not found at {config_path}")
 
     with Path(config_path).open("r") as file:
-        config = yaml.safe_load(file)
-
-    if config_name not in config:
-        raise KeyError(f"Config key {config_name} not found in test config file")
-
-    return config.get(config_name)
+        return yaml.safe_load(file)
 
 
 @pytest.fixture(scope="session")
 def configuration_manager():
-    config = load_test_config("configuration_manager")
+    config = load_test_config()
     root_dir = Path(__file__).resolve().parent.parent
     user_dir = root_dir / config["user_dir"]
     os.chdir(root_dir)
@@ -64,43 +60,31 @@ def task_specification_registry(configuration_manager):
 
 @pytest.fixture
 def user_dir():
-    config = load_test_config("configuration_manager")
+    config = load_test_config()
     root_dir = Path(__file__).resolve().parent.parent
     return root_dir / config["user_dir"]
 
 
 @pytest.fixture(scope="session")
-def db_manager():
-    config = load_test_config("db_manager")
+def db_interface():
+    config = load_test_config()
 
-    db_credentials_config = config["db_credentials"]
-    db_credentials = ServiceCredentials(
-        host=db_credentials_config["host"],
-        port=db_credentials_config["port"],
-        username=db_credentials_config["username"],
-        password=db_credentials_config["password"],
-    )
+    db_credentials = ServiceCredentials(**config["db"])
 
-    return DbManager(db_credentials, "test-eos")
+    return AsyncMongoDbInterface(db_credentials, "test-eos")
 
 
 @pytest.fixture(scope="session")
-def file_db_manager(db_manager):
-    config = load_test_config("file_db_manager")
+def file_db_interface(db_interface):
+    config = load_test_config()
 
-    file_db_credentials_config = config["file_db_credentials"]
-    file_db_credentials = ServiceCredentials(
-        host=file_db_credentials_config["host"],
-        port=file_db_credentials_config["port"],
-        username=file_db_credentials_config["username"],
-        password=file_db_credentials_config["password"],
-    )
+    file_db_credentials = ServiceCredentials(**config["file_db"])
 
-    return FileDbManager(file_db_credentials, bucket_name="test-eos")
+    return FileDbInterface(file_db_credentials, bucket_name="test-eos")
 
 
 @pytest.fixture
-def setup_lab_experiment(request, configuration_manager, db_manager):
+def setup_lab_experiment(request, configuration_manager, db_interface):
     lab_name, experiment_name = request.param
 
     if lab_name not in configuration_manager.labs:
@@ -124,46 +108,60 @@ def experiment_graph(setup_lab_experiment):
 
 
 @pytest.fixture
-def clean_db(db_manager):
-    db_manager.clean_db()
+async def clean_db(db_interface):
+    await db_interface.clean_db()
 
 
 @pytest.fixture
-def container_manager(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    return ContainerManager(configuration_manager, db_manager)
+async def container_manager(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    container_manager = ContainerManager(configuration_manager=configuration_manager, db_interface=db_interface)
+    await container_manager.initialize(db_interface)
+    return container_manager
 
 
 @pytest.fixture
-def device_manager(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    device_manager = DeviceManager(configuration_manager, db_manager)
-    device_manager.update_devices(loaded_labs=set(configuration_manager.labs.keys()))
+async def device_manager(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    device_manager = DeviceManager(configuration_manager, db_interface)
+    await device_manager.initialize(db_interface)
+
+    await device_manager.update_devices(loaded_labs=set(configuration_manager.labs.keys()))
     yield device_manager
-    device_manager.cleanup_device_actors()
+    await device_manager.cleanup_device_actors()
 
 
 @pytest.fixture
-def experiment_manager(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    return ExperimentManager(configuration_manager, db_manager)
+async def experiment_manager(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    experiment_manager = ExperimentManager(configuration_manager, db_interface)
+    await experiment_manager.initialize(db_interface)
+    return experiment_manager
 
 
 @pytest.fixture
-def container_allocator(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    return ContainerAllocationManager(configuration_manager, db_manager)
+async def container_allocator(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    container_allocator = ContainerAllocator(configuration_manager, db_interface)
+    await container_allocator.initialize(db_interface)
+    return container_allocator
 
 
 @pytest.fixture
-def device_allocator(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    return DeviceAllocationManager(configuration_manager, db_manager)
+async def device_allocator(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    device_allocator = DeviceAllocator(configuration_manager, db_interface)
+    await device_allocator.initialize(db_interface)
+    return device_allocator
 
 
 @pytest.fixture
-def resource_allocation_manager(setup_lab_experiment, configuration_manager, db_manager, clean_db):
-    return ResourceAllocationManager(configuration_manager, db_manager)
+async def resource_allocation_manager(setup_lab_experiment, configuration_manager, db_interface, clean_db):
+    resource_allocation_manager = ResourceAllocationManager(db_interface)
+    await resource_allocation_manager.initialize(configuration_manager, db_interface)
+    return resource_allocation_manager
 
 
 @pytest.fixture
-def task_manager(setup_lab_experiment, configuration_manager, db_manager, file_db_manager, clean_db):
-    return TaskManager(configuration_manager, db_manager, file_db_manager)
+async def task_manager(setup_lab_experiment, configuration_manager, db_interface, file_db_interface, clean_db):
+    task_manager = TaskManager(configuration_manager, db_interface, file_db_interface)
+    await task_manager.initialize(db_interface)
+    return task_manager
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -184,6 +182,18 @@ def task_executor(
 ):
     return TaskExecutor(
         task_manager, device_manager, container_manager, resource_allocation_manager, configuration_manager
+    )
+
+
+@pytest.fixture
+def on_demand_task_executor(
+    setup_lab_experiment,
+    task_executor,
+    task_manager,
+    container_manager,
+):
+    return OnDemandTaskExecutor(
+        task_executor, task_manager, container_manager
     )
 
 
@@ -246,19 +256,23 @@ def experiment_executor_factory(
 
 
 @pytest.fixture
-def campaign_manager(
+async def campaign_manager(
     configuration_manager,
-    db_manager,
+    db_interface,
 ):
-    return CampaignManager(configuration_manager, db_manager)
+    campaign_manager = CampaignManager(configuration_manager, db_interface)
+    await campaign_manager.initialize(db_interface)
+    return campaign_manager
 
 
 @pytest.fixture
-def campaign_optimizer_manager(
+async def campaign_optimizer_manager(
     configuration_manager,
-    db_manager,
+    db_interface,
 ):
-    return CampaignOptimizerManager(configuration_manager, db_manager)
+    campaign_optimizer_manager = CampaignOptimizerManager(configuration_manager, db_interface)
+    await campaign_optimizer_manager.initialize(db_interface)
+    return campaign_optimizer_manager
 
 
 @pytest.fixture

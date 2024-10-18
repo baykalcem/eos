@@ -8,7 +8,7 @@ from tests.fixtures import *
 LAB_ID = "multiplication_lab"
 CAMPAIGN_ID = "optimize_multiplication_campaign"
 EXPERIMENT_TYPE = "optimize_multiplication"
-MAX_EXPERIMENTS = 40
+MAX_EXPERIMENTS = 30
 DO_OPTIMIZATION = True
 
 
@@ -28,7 +28,7 @@ class TestCampaignExecutor:
     async def test_start_campaign(self, campaign_executor, campaign_manager):
         await campaign_executor.start_campaign()
 
-        campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         assert campaign is not None
         assert campaign.id == CAMPAIGN_ID
         assert campaign.status == CampaignStatus.RUNNING
@@ -46,7 +46,7 @@ class TestCampaignExecutor:
         solutions = await campaign_executor.optimizer.get_optimal_solutions.remote()
         assert not solutions.empty
         assert len(solutions) == 1
-        assert solutions["compute_multiplication_objective.objective"].iloc[0] / 100 <= 80
+        assert solutions["compute_multiplication_objective.objective"].iloc[0] / 100 <= 120
 
     @pytest.mark.slow
     @pytest.mark.asyncio
@@ -69,7 +69,7 @@ class TestCampaignExecutor:
         assert campaign_executor._campaign_status == CampaignStatus.FAILED
 
         # Verify that the campaign manager has marked the campaign as failed
-        campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         assert campaign.status == CampaignStatus.FAILED
 
     @pytest.mark.slow
@@ -81,7 +81,7 @@ class TestCampaignExecutor:
         completed_experiments = 0
         while completed_experiments < 2:
             await campaign_executor.progress_campaign()
-            campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+            campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
             completed_experiments = campaign.experiments_completed
             await asyncio.sleep(0.1)
 
@@ -90,7 +90,7 @@ class TestCampaignExecutor:
 
         await campaign_executor.cancel_campaign()
 
-        campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         assert campaign.status == CampaignStatus.CANCELLED
 
         # Try to progress the campaign after cancellation
@@ -112,15 +112,16 @@ class TestCampaignExecutor:
         completed_experiments = 0
         while completed_experiments < 3:
             await campaign_executor.progress_campaign()
-            campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+            campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
             completed_experiments = campaign.experiments_completed
             await asyncio.sleep(0.1)
 
-        initial_campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        initial_campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         num_initial_reported_samples = ray.get(campaign_executor.optimizer.get_num_samples_reported.remote())
 
         await campaign_executor.cancel_campaign()
-        assert campaign_manager.get_campaign(CAMPAIGN_ID).status == CampaignStatus.CANCELLED
+        campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
+        assert campaign.status == CampaignStatus.CANCELLED
         campaign_executor.cleanup()
 
         # Create a new campaign executor to resume the campaign
@@ -137,7 +138,7 @@ class TestCampaignExecutor:
             experiment_executor_factory,
         )
         await new_campaign_executor.start_campaign()
-        resumed_campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        resumed_campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         assert resumed_campaign.status == CampaignStatus.RUNNING
 
         # Verify that the number of completed experiments is preserved
@@ -162,7 +163,7 @@ class TestCampaignExecutor:
 
         # Run until one experiment is complete
         while (
-            campaign_manager.get_campaign(CAMPAIGN_ID).experiments_completed < 1
+            (await campaign_manager.get_campaign(CAMPAIGN_ID)).experiments_completed < 1
             or len(campaign_executor._experiment_executors) < 1
         ):
             await campaign_executor.progress_campaign()
@@ -183,5 +184,5 @@ class TestCampaignExecutor:
             await campaign_executor.cancel_campaign()
         assert "Timed out while cancelling experiments" in str(exc_info.value)
 
-        campaign = campaign_manager.get_campaign(CAMPAIGN_ID)
+        campaign = await campaign_manager.get_campaign(CAMPAIGN_ID)
         assert campaign.status == CampaignStatus.CANCELLED

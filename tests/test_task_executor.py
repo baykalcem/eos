@@ -23,7 +23,7 @@ class TestTaskExecutor:
         experiment_manager,
         experiment_graph,
     ):
-        experiment_manager.create_experiment("water_purification", "water_purification")
+        await experiment_manager.create_experiment("water_purification", "water_purification")
 
         task_config = experiment_graph.get_task_config("mixing")
         task_config.parameters["time"] = 5
@@ -56,10 +56,10 @@ class TestTaskExecutor:
             requester="tester",
         )
         request.add_resource("magnetic_mixer", "small_lab", ResourceType.DEVICE)
-        active_request = resource_allocation_manager.request_resources(request, lambda requests: None)
-        resource_allocation_manager.process_active_requests()
+        active_request = await resource_allocation_manager.request_resources(request, lambda requests: None)
+        await resource_allocation_manager.process_active_requests()
 
-        experiment_manager.create_experiment("water_purification", "water_purification")
+        await experiment_manager.create_experiment("water_purification", "water_purification")
 
         task_config = experiment_graph.get_task_config("mixing")
         task_config.parameters["time"] = 5
@@ -72,29 +72,38 @@ class TestTaskExecutor:
         with pytest.raises(EosTaskResourceAllocationError):
             await task_executor.request_task_execution(task_parameters)
 
-        resource_allocation_manager.release_resources(active_request)
+        await resource_allocation_manager.release_resources(active_request)
 
     @pytest.mark.asyncio
     async def test_request_task_cancellation(self, task_executor, experiment_manager):
-        experiment_manager.create_experiment("water_purification", "water_purification")
+        await experiment_manager.create_experiment("water_purification", "water_purification")
 
         sleep_config = TaskConfig(
             id="sleep_task",
             type="Sleep",
             devices=[TaskDeviceConfig(lab_id="small_lab", id="general_computer")],
-            parameters={"sleep_time": 2},
+            parameters={"sleep_time": 5},  # 5 seconds to ensure it's still running when we cancel
         )
         task_parameters = TaskExecutionParameters(
             experiment_id="water_purification",
             task_config=sleep_config,
         )
 
-        tasks = set()
 
-        task = asyncio.create_task(task_executor.request_task_execution(task_parameters))
-        tasks.add(task)
-        await asyncio.sleep(1)
+        async def run_task():
+            return await task_executor.request_task_execution(task_parameters)
 
-        await task_executor.request_task_cancellation(task_parameters.experiment_id, task_parameters.task_config.id)
+        async def cancel_task():
+            await asyncio.sleep(2)  # Wait for 2 seconds before cancelling
+            assert task_executor._active_tasks == {"water_purification": {"sleep_task": task_parameters}}
+            await task_executor.request_task_cancellation(task_parameters.experiment_id, task_parameters.task_config.id)
 
-        assert True
+        # Use asyncio.gather to run both coroutines concurrently
+        task_result, _ = await asyncio.gather(
+            run_task(),
+            cancel_task(),
+            return_exceptions=True  # This allows us to catch any exceptions
+        )
+
+        # Check if the task was cancelled
+        assert task_executor._active_tasks == {}

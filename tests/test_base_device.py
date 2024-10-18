@@ -2,6 +2,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+import ray
 
 from eos.devices.base_device import BaseDevice, DeviceStatus
 from eos.devices.exceptions import EosDeviceError, EosDeviceCleanupError, EosDeviceInitializationError
@@ -87,8 +88,3 @@ class TestBaseDevice:
         with pytest.raises(EosDeviceInitializationError):
             mock_device.initialize({})
         assert mock_device.status == DeviceStatus.IDLE
-
-    def test_del_method(self, mock_device):
-        mock_device.__del__()
-        assert mock_device.status == DeviceStatus.DISABLED
-        assert mock_device.mock_resource is None

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -6,8 +7,7 @@ from eos.experiments.entities.experiment import Experiment, ExperimentStatus, Ex
 from eos.experiments.exceptions import EosExperimentStateError
 from eos.experiments.repositories.experiment_repository import ExperimentRepository
 from eos.logging.logger import log
-from eos.persistence.db_manager import DbManager
-from eos.tasks.entities.task import TaskStatus
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
 from eos.tasks.repositories.task_repository import TaskRepository
 
 
@@ -16,15 +16,21 @@ class ExperimentManager:
     Responsible for managing the state of all experiments in EOS and tracking their execution.
     """
 
-    def __init__(self, configuration_manager: ConfigurationManager, db_manager: DbManager):
+    def __init__(self, configuration_manager: ConfigurationManager, db_interface: AsyncMongoDbInterface):
         self._configuration_manager = configuration_manager
-        self._experiments = ExperimentRepository("experiments", db_manager)
-        self._experiments.create_indices([("id", 1)], unique=True)
-        self._tasks = TaskRepository("tasks", db_manager)
+        self._session_factory = db_interface.session_factory
+        self._experiments = None
+        self._tasks = None
 
+    async def initialize(self, db_interface: AsyncMongoDbInterface) -> None:
+        self._experiments = ExperimentRepository(db_interface)
+        await self._experiments.initialize()
+
+        self._tasks = TaskRepository(db_interface)
+        await self._tasks.initialize()
         log.debug("Experiment manager initialized.")
 
-    def create_experiment(
+    async def create_experiment(
         self,
         experiment_id: str,
         experiment_type: str,
@@ -41,7 +47,7 @@ class ExperimentManager:
         :param execution_parameters: Parameters for the execution of the experiment.
         :param metadata: Additional metadata to be stored with the experiment.
         """
-        if self._experiments.get_one(id=experiment_id):
+        if await self._experiments.exists(id=experiment_id):
             raise EosExperimentStateError(f"Experiment '{experiment_id}' already exists.")
 
         experiment_config = self._configuration_manager.experiments.get(experiment_type)
@@ -58,107 +64,108 @@ class ExperimentManager:
             dynamic_parameters=dynamic_parameters or {},
             metadata=metadata or {},
         )
-        self._experiments.create(experiment.model_dump())
+        await self._experiments.create(experiment.model_dump())
 
         log.info(f"Created experiment '{experiment_id}'.")
 
-    def delete_experiment(self, experiment_id: str) -> None:
+    async def delete_experiment(self, experiment_id: str) -> None:
         """
         Delete an experiment.
         """
-        if not self._experiments.exists(id=experiment_id):
+        if not await self._experiments.exists(id=experiment_id):
             raise EosExperimentStateError(f"Experiment '{experiment_id}' does not exist.")
 
-        self._experiments.delete(id=experiment_id)
-        self._tasks.delete(experiment_id=experiment_id)
+        await self._experiments.delete_one(id=experiment_id)
+        await self._tasks.delete_many(experiment_id=experiment_id)
 
         log.info(f"Deleted experiment '{experiment_id}'.")
 
-    def start_experiment(self, experiment_id: str) -> None:
+    async def start_experiment(self, experiment_id: str) -> None:
         """
         Start an experiment.
         """
-        self._set_experiment_status(experiment_id, ExperimentStatus.RUNNING)
+        await self._set_experiment_status(experiment_id, ExperimentStatus.RUNNING)
 
-    def complete_experiment(self, experiment_id: str) -> None:
+    async def complete_experiment(self, experiment_id: str) -> None:
         """
         Complete an experiment.
         """
-        self._set_experiment_status(experiment_id, ExperimentStatus.COMPLETED)
+        await self._set_experiment_status(experiment_id, ExperimentStatus.COMPLETED)
 
-    def cancel_experiment(self, experiment_id: str) -> None:
+    async def cancel_experiment(self, experiment_id: str) -> None:
         """
         Cancel an experiment.
         """
-        self._set_experiment_status(experiment_id, ExperimentStatus.CANCELLED)
+        await self._set_experiment_status(experiment_id, ExperimentStatus.CANCELLED)
 
-    def suspend_experiment(self, experiment_id: str) -> None:
+    async def suspend_experiment(self, experiment_id: str) -> None:
         """
         Suspend an experiment.
         """
-        self._set_experiment_status(experiment_id, ExperimentStatus.SUSPENDED)
+        await self._set_experiment_status(experiment_id, ExperimentStatus.SUSPENDED)
 
-    def fail_experiment(self, experiment_id: str) -> None:
+    async def fail_experiment(self, experiment_id: str) -> None:
         """
         Fail an experiment.
         """
-        self._set_experiment_status(experiment_id, ExperimentStatus.FAILED)
+        await self._set_experiment_status(experiment_id, ExperimentStatus.FAILED)
 
-    def get_experiment(self, experiment_id: str) -> Experiment | None:
+    async def get_experiment(self, experiment_id: str) -> Experiment | None:
         """
         Get an experiment.
         """
-        experiment = self._experiments.get_one(id=experiment_id)
+        experiment = await self._experiments.get_one(id=experiment_id)
         return Experiment(**experiment) if experiment else None
 
-    def get_experiments(self, **query: dict[str, Any]) -> list[Experiment]:
+    async def get_experiments(self, **query: dict[str, Any]) -> list[Experiment]:
         """
         Get experiments with a custom query.
 
         :param query: Dictionary of query parameters.
         """
-        experiments = self._experiments.get_all(**query)
+        experiments = await self._experiments.get_all(**query)
         return [Experiment(**experiment) for experiment in experiments]
 
-    def get_lab_experiments(self, lab: str) -> list[Experiment]:
+    async def get_lab_experiments(self, lab: str) -> list[Experiment]:
         """
         Get all experiments associated with a lab.
         """
-        experiments = self._experiments.get_experiments_by_lab(lab)
+        experiments = await self._experiments.get_experiments_by_lab(lab)
         return [Experiment(**experiment) for experiment in experiments]
 
-    def get_running_tasks(self, experiment_id: str | None) -> set[str]:
+    async def get_running_tasks(self, experiment_id: str | None) -> set[str]:
         """
         Get the list of currently running tasks constrained by experiment ID.
         """
-        experiment = self._experiments.get_one(id=experiment_id)
+        experiment = await self._experiments.get_one(id=experiment_id)
         return set(experiment.get("running_tasks", {})) if experiment else {}
 
-    def get_completed_tasks(self, experiment_id: str) -> set[str]:
+    async def get_completed_tasks(self, experiment_id: str) -> set[str]:
         """
         Get the list of completed tasks constrained by experiment ID.
         """
-        experiment = self._experiments.get_one(id=experiment_id)
+        experiment = await self._experiments.get_one(id=experiment_id)
         return set(experiment.get("completed_tasks", {})) if experiment else {}
 
-    def delete_non_completed_tasks(self, experiment_id: str) -> None:
+    async def delete_non_completed_tasks(self, experiment_id: str) -> None:
         """
         Delete all tasks that are not completed in the given experiment.
         """
-        experiment = self.get_experiment(experiment_id)
+        experiment = await self.get_experiment(experiment_id)
 
-        for task_id in experiment.running_tasks:
-            self._tasks.delete(experiment_id=experiment_id, id=task_id)
-        self._experiments.clear_running_tasks(experiment_id)
+        async with self._session_factory() as session:
+            await asyncio.gather(
+                self._tasks.delete_running_tasks(experiment_id, experiment.running_tasks, session=session),
+                self._experiments.clear_running_tasks(experiment_id, session=session),
+                self._tasks.delete_failed_and_cancelled_tasks(experiment_id, session=session),
+            )
+            await session.commit_transaction()
 
-        self._tasks.delete(experiment_id=experiment_id, status=TaskStatus.FAILED.value)
-        self._tasks.delete(experiment_id=experiment_id, status=TaskStatus.CANCELLED.value)
-
-    def _set_experiment_status(self, experiment_id: str, new_status: ExperimentStatus) -> None:
+    async def _set_experiment_status(self, experiment_id: str, new_status: ExperimentStatus) -> None:
         """
         Set the status of an experiment.
         """
-        if not self._experiments.exists(id=experiment_id):
+        if not await self._experiments.exists(id=experiment_id):
             raise EosExperimentStateError(f"Experiment '{experiment_id}' does not exist.")
 
         update_fields = {"status": new_status.value}
@@ -171,4 +178,4 @@ class ExperimentManager:
         ]:
             update_fields["end_time"] = datetime.now(tz=timezone.utc)
 
-        self._experiments.update(update_fields, id=experiment_id)
+        await self._experiments.update_one(update_fields, id=experiment_id)

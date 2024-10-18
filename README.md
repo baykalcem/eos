@@ -27,6 +27,8 @@ EOS provides:
 * Device and sample container allocation system to prevent conflicts
 * Result aggregation such as automatic output file storage
 
+Documentation is available at [https://unc-robotics.github.io/eos/](https://unc-robotics.github.io/eos/).
+
 ## Installation
 
 ### 1. Install PDM

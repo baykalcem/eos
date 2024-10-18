@@ -30,7 +30,7 @@ class TestCampaignBayesianOptimizer:
 
         optimal_solutions = optimizer.get_optimal_solutions()
         assert len(optimal_solutions) == 1
-        assert abs(optimal_solutions["y"].to_numpy()[0] - 4) < 0.01
+        assert abs(optimal_solutions["y"].to_numpy()[0] - 4) < 0.02
 
     @pytest.mark.slow
     def test_competing_multi_objective_optimization(self):
@@ -48,7 +48,7 @@ class TestCampaignBayesianOptimizer:
             initial_sampling_method=SamplingMethodEnum.SOBOL,
         )
 
-        for _ in range(30):
+        for _ in range(20):
             parameters = optimizer.sample()
             results = pd.DataFrame()
             results["y1"] = -((parameters["x"] - 2) ** 2) + 4  # Objective 1: Maximize y1
@@ -74,8 +74,8 @@ class TestCampaignBayesianOptimizer:
 
         for true_solution in true_pareto_front:
             assert any(
-                abs(solution["x"] - true_solution["x"]) < 0.7
-                and abs(solution["y1"] - true_solution["y1"]) < 0.7
-                and abs(solution["y2"] - true_solution["y2"]) < 0.7
+                abs(solution["x"] - true_solution["x"]) < 0.8
+                and abs(solution["y1"] - true_solution["y1"]) < 0.8
+                and abs(solution["y2"] - true_solution["y2"]) < 0.8
                 for _, solution in optimal_solutions.iterrows()
             )

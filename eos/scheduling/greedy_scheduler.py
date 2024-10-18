@@ -44,8 +44,8 @@ class GreedyScheduler(AbstractScheduler):
         self._device_manager = device_manager
 
         self._resource_allocation_manager = resource_allocation_manager
-        self._device_allocation_manager = self._resource_allocation_manager.device_allocation_manager
-        self._container_allocation_manager = self._resource_allocation_manager.container_allocation_manager
+        self._device_allocator = self._resource_allocation_manager.device_allocator
+        self._container_allocator = self._resource_allocation_manager.container_allocator
 
         self._registered_experiments = {}
         self._allocated_resources: dict[str, dict[str, ActiveResourceAllocationRequest]] = {}
@@ -66,7 +66,7 @@ class GreedyScheduler(AbstractScheduler):
             self._registered_experiments[experiment_id] = (experiment_type, experiment_graph)
             log.debug("Experiment '%s' registered for scheduling.", experiment_id)
 
-    def unregister_experiment(self, experiment_id: str) -> None:
+    async def unregister_experiment(self, experiment_id: str) -> None:
         """
         Unregister an experiment from the scheduler. The scheduler will no longer consider this experiment when tasks
         are requested.
@@ -74,7 +74,7 @@ class GreedyScheduler(AbstractScheduler):
         with self._lock:
             if experiment_id in self._registered_experiments:
                 del self._registered_experiments[experiment_id]
-                self._release_experiment_resources(experiment_id)
+                await self._release_experiment_resources(experiment_id)
             else:
                 raise EosSchedulerRegistrationError(
                     f"Cannot unregister experiment {experiment_id} from the scheduler as it is not registered."
@@ -97,13 +97,15 @@ class GreedyScheduler(AbstractScheduler):
             experiment_type, experiment_graph = self._registered_experiments[experiment_id]
 
         all_tasks = experiment_graph.get_topologically_sorted_tasks()
-        completed_tasks = self._experiment_manager.get_completed_tasks(experiment_id)
+        completed_tasks = await self._experiment_manager.get_completed_tasks(experiment_id)
         pending_tasks = [task_id for task_id in all_tasks if task_id not in completed_tasks]
 
         # Release resources for completed tasks
-        for task_id in completed_tasks:
-            if task_id in self._allocated_resources.get(experiment_id, {}):
-                self._release_task_resources(experiment_id, task_id)
+        await asyncio.gather(*[
+            self._release_task_resources(experiment_id, task_id)
+            for task_id in completed_tasks
+            if task_id in self._allocated_resources.get(experiment_id, {})
+        ])
 
         scheduled_tasks = []
         for task_id in pending_tasks:
@@ -111,13 +113,15 @@ class GreedyScheduler(AbstractScheduler):
                 continue
 
             task_config = experiment_graph.get_task_config(task_id)
-            task_config = self._task_input_resolver.resolve_input_container_references(experiment_id, task_config)
+            task_config = await self._task_input_resolver.resolve_input_container_references(experiment_id, task_config)
 
-            if not all(self._check_device_available(device) for device in task_config.devices):
+            device_checks = [self._check_device_available(device) for device in task_config.devices]
+            if not all(await asyncio.gather(*device_checks)):
                 continue
-            if not all(
+            container_checks = [
                 self._check_container_available(container_id) for container_id in task_config.containers.values()
-            ):
+            ]
+            if not all(await asyncio.gather(*container_checks)):
                 continue
 
             try:
@@ -184,19 +188,19 @@ class GreedyScheduler(AbstractScheduler):
             active_request = request
             allocation_event.set()
 
-        active_resource_request = self._resource_allocation_manager.request_resources(
+        active_resource_request = await self._resource_allocation_manager.request_resources(
             resource_request, resource_request_callback
         )
 
         if active_resource_request.status == ResourceRequestAllocationStatus.ALLOCATED:
             return active_resource_request
 
-        self._resource_allocation_manager.process_active_requests()
+        await self._resource_allocation_manager.process_active_requests()
 
         try:
             await asyncio.wait_for(allocation_event.wait(), timeout)
         except asyncio.TimeoutError as e:
-            self._resource_allocation_manager.abort_active_request(active_resource_request.id)
+            await self._resource_allocation_manager.abort_active_request(active_resource_request.id)
             raise EosSchedulerResourceAllocationError(
                 f"Resource allocation timed out after {timeout} seconds for task '{resource_request.requester}' "
                 f"while trying to schedule it. "
@@ -210,19 +214,19 @@ class GreedyScheduler(AbstractScheduler):
 
         return active_request
 
-    def _release_task_resources(self, experiment_id: str, task_id: str) -> None:
+    async def _release_task_resources(self, experiment_id: str, task_id: str) -> None:
         active_request = self._allocated_resources[experiment_id].pop(task_id, None)
         if active_request:
             try:
-                self._resource_allocation_manager.release_resources(active_request)
-                self._resource_allocation_manager.process_active_requests()
+                await self._resource_allocation_manager.release_resources(active_request)
+                await self._resource_allocation_manager.process_active_requests()
             except EosResourceRequestError as e:
                 log.error(f"Error releasing resources for task '{task_id}' in experiment '{experiment_id}': {e}")
 
-    def _release_experiment_resources(self, experiment_id: str) -> None:
+    async def _release_experiment_resources(self, experiment_id: str) -> None:
         task_ids = list(self._allocated_resources.get(experiment_id, {}).keys())
         for task_id in task_ids:
-            self._release_task_resources(experiment_id, task_id)
+            await self._release_task_resources(experiment_id, task_id)
 
         if experiment_id in self._allocated_resources:
             del self._allocated_resources[experiment_id]
@@ -237,28 +241,29 @@ class GreedyScheduler(AbstractScheduler):
         dependencies = experiment_graph.get_task_dependencies(task_id)
         return all(dep in completed_tasks for dep in dependencies)
 
-    def _check_device_available(self, task_device: TaskDeviceConfig) -> bool:
+    async def _check_device_available(self, task_device: TaskDeviceConfig) -> bool:
         """
         Check if a device is available for a task. A device is available if it is active, not allocated by the device
         allocation manager.
         """
-        if self._device_manager.get_device(task_device.lab_id, task_device.id).status == DeviceStatus.INACTIVE:
+        device = await self._device_manager.get_device(task_device.lab_id, task_device.id)
+        if device.status == DeviceStatus.INACTIVE:
             log.warning(
                 f"Device {task_device.id} in lab {task_device.lab_id} is inactive but is requested by task "
                 f"{task_device.id}."
             )
             return False
 
-        return not self._device_allocation_manager.is_allocated(task_device.lab_id, task_device.id)
+        return not await self._device_allocator.is_allocated(task_device.lab_id, task_device.id)
 
-    def _check_container_available(self, container_id: str) -> bool:
+    async def _check_container_available(self, container_id: str) -> bool:
         """
         Check if a container is available for a task. A device is available if not allocated by the container
         allocation manager.
         """
-        return not self._container_allocation_manager.is_allocated(container_id)
+        return not await self._container_allocator.is_allocated(container_id)
 
-    def is_experiment_completed(self, experiment_id: str) -> bool:
+    async def is_experiment_completed(self, experiment_id: str) -> bool:
         """
         Check if an experiment has been completed. The scheduler should consider the completed tasks from the task
         manager to determine if the experiment has been completed.
@@ -270,6 +275,6 @@ class GreedyScheduler(AbstractScheduler):
 
         experiment_type, experiment_graph = self._registered_experiments[experiment_id]
         all_tasks = experiment_graph.get_task_graph().nodes
-        completed_tasks = self._experiment_manager.get_completed_tasks(experiment_id)
+        completed_tasks = await self._experiment_manager.get_completed_tasks(experiment_id)
 
         return all(task in completed_tasks for task in all_tasks)

@@ -1,0 +1,13 @@
+user_dir: tests/user
+
+db:
+  host: localhost
+  port: 27017
+  username: eos-user
+  password: eos-password
+
+file_db:
+  host: localhost
+  port: 9004
+  username: eos-user
+  password: eos-password

@@ -24,43 +24,31 @@ from eos.web_api.orchestrator.controllers.lab_controller import LabController
 from eos.web_api.orchestrator.controllers.task_controller import TaskController
 from eos.web_api.orchestrator.exception_handling import global_exception_handler
 
-default_config = {
-    "user_dir": "./user",
-    "labs": [],
-    "experiments": [],
-    "log_level": "INFO",
-    "web_api": {
-        "host": "localhost",
-        "port": 8070,
-    },
-    "db": {
-        "host": "localhost",
-        "port": 27017,
-        "username": None,
-        "password": None,
-    },
-    "file_db": {
-        "host": "localhost",
-        "port": 9004,
-        "username": None,
-        "password": None,
-    },
-}
-
-eos_banner = r"""The Experiment Orchestration System
- ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄
-▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
-▐░█▀▀▀▀▀▀▀▀▀ ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀▀▀
-▐░█▄▄▄▄▄▄▄▄▄ ▐░▌       ▐░▌▐░█▄▄▄▄▄▄▄▄▄
-▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░░░░░░░░░░░▌
-▐░█▀▀▀▀▀▀▀▀▀ ▐░▌       ▐░▌ ▀▀▀▀▀▀▀▀▀█░▌
-▐░█▄▄▄▄▄▄▄▄▄ ▐░█▄▄▄▄▄▄▄█░▌ ▄▄▄▄▄▄▄▄▄█░▌
-▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
- ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀
-"""
-
 
 def load_config(config_file: str) -> DictConfig:
+    default_config = {
+        "user_dir": "./user",
+        "labs": [],
+        "experiments": [],
+        "log_level": "INFO",
+        "web_api": {
+            "host": "localhost",
+            "port": 8070,
+        },
+        "db": {
+            "host": "localhost",
+            "port": 27017,
+            "username": None,
+            "password": None,
+        },
+        "file_db": {
+            "host": "localhost",
+            "port": 9004,
+            "username": None,
+            "password": None,
+        },
+    }
+
     if not Path(config_file).exists():
         raise FileNotFoundError(f"Config file '{config_file}' does not exist")
     return OmegaConf.merge(OmegaConf.create(default_config), OmegaConf.load(config_file))
@@ -100,17 +88,56 @@ async def handle_shutdown(
         await web_api_server.shutdown()
 
         log.info("Shutting down the orchestrator...")
-        orchestrator.terminate()
+        await orchestrator.terminate()
 
         log.info("EOS shut down.")
 
 
-async def run_all(orchestrator: Orchestrator, web_api_server: uvicorn.Server) -> None:
-    async with handle_shutdown(orchestrator, web_api_server):
-        orchestrator_task = asyncio.create_task(orchestrator.spin())
-        web_server_task = asyncio.create_task(web_api_server.serve())
+async def setup_orchestrator(config: DictConfig) -> Orchestrator:
+    db_credentials = ServiceCredentials(**config.db)
+    file_db_credentials = ServiceCredentials(**config.file_db)
 
-        await asyncio.gather(orchestrator_task, web_server_task)
+    orchestrator = Orchestrator(config.user_dir, db_credentials, file_db_credentials)
+    await orchestrator.initialize()
+    await orchestrator.load_labs(config.labs)
+    orchestrator.load_experiments(config.experiments)
+
+    return orchestrator
+
+
+def setup_web_api(orchestrator: Orchestrator, config: DictConfig) -> uvicorn.Server:
+    litestar_logging_config = LoggingConfig(
+        configure_root_logger=False,
+        loggers={"litestar": {"level": "CRITICAL"}},
+    )
+    os.environ["LITESTAR_WARN_IMPLICIT_SYNC_TO_THREAD"] = "0"
+
+    api_router = Router(
+        path="/api",
+        route_handlers=[TaskController, ExperimentController, CampaignController, LabController, FileController],
+        dependencies={"orchestrator": Provide(lambda: orchestrator)},
+        exception_handlers={Exception: global_exception_handler},
+    )
+
+    web_api_app = Litestar(
+        route_handlers=[api_router],
+        logging_config=litestar_logging_config,
+        exception_handlers={Exception: global_exception_handler},
+    )
+
+    uv_config = uvicorn.Config(web_api_app, host=config.web_api.host, port=config.web_api.port, log_level="critical")
+
+    return uvicorn.Server(uv_config)
+
+
+async def run_eos(config: DictConfig) -> None:
+    orchestrator = await setup_orchestrator(config)
+    web_api_server = setup_web_api(orchestrator, config)
+
+    log.info("EOS initialized.")
+
+    async with handle_shutdown(orchestrator, web_api_server):
+        await asyncio.gather(orchestrator.spin(), web_api_server.serve())
 
 
 def start_orchestrator(
@@ -132,55 +159,31 @@ def start_orchestrator(
     ) = None,
     log_level: Annotated[LogLevel, typer.Option("--log-level", "-v", help="Logging level")] = None,
 ) -> None:
-
-    typer.echo(eos_banner)
+    typer.echo(EOS_BANNER)
 
     file_config = load_config(config_file)
-    cli_config = {}
-    if user_dir is not None:
-        cli_config["user_dir"] = user_dir
-    if labs is not None:
-        cli_config["labs"] = parse_list_arg(labs)
-    if experiments is not None:
-        cli_config["experiments"] = parse_list_arg(experiments)
-    if log_level is not None:
-        cli_config["log_level"] = log_level.value
+    cli_config = {
+        "user_dir": user_dir,
+        "labs": parse_list_arg(labs) if labs else None,
+        "experiments": parse_list_arg(experiments) if experiments else None,
+        "log_level": log_level.value if log_level else None,
+    }
+    cli_config = {k: v for k, v in cli_config.items() if v is not None}
     config = OmegaConf.merge(file_config, OmegaConf.create(cli_config))
 
     log.set_level(config.log_level)
 
-    # Set up the orchestrator
-    db_credentials = ServiceCredentials(**config.db)
-    file_db_credentials = ServiceCredentials(**config.file_db)
-    orchestrator = Orchestrator(config.user_dir, db_credentials, file_db_credentials)
-    orchestrator.load_labs(config.labs)
-    orchestrator.load_experiments(config.experiments)
-    log.info("EOS initialized.")
+    asyncio.run(run_eos(config))
 
-    # Set up the web API server
-    logging_config = LoggingConfig(
-        configure_root_logger=False,
-        loggers={
-            "litestar": {"level": "CRITICAL"},
-        },
-    )
-    os.environ["LITESTAR_WARN_IMPLICIT_SYNC_TO_THREAD"] = "0"
 
-    def orchestrator_provider() -> Orchestrator:
-        return orchestrator
-
-    api_router = Router(
-        path="/api",
-        route_handlers=[TaskController, ExperimentController, CampaignController, LabController, FileController],
-        dependencies={"orchestrator": Provide(orchestrator_provider)},
-        exception_handlers={Exception: global_exception_handler},
-    )
-    web_api_app = Litestar(
-        route_handlers=[api_router],
-        logging_config=logging_config,
-        exception_handlers={Exception: global_exception_handler},
-    )
-    config = uvicorn.Config(web_api_app, host=config.web_api.host, port=config.web_api.port, log_level="critical")
-    web_api_server = uvicorn.Server(config)
-
-    asyncio.run(run_all(orchestrator, web_api_server))
+EOS_BANNER = r"""The Experiment Orchestration System
+ ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄
+▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
+▐░█▀▀▀▀▀▀▀▀▀ ▐░█▀▀▀▀▀▀▀█░▌▐░█▀▀▀▀▀▀▀▀▀
+▐░█▄▄▄▄▄▄▄▄▄ ▐░▌       ▐░▌▐░█▄▄▄▄▄▄▄▄▄
+▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░░░░░░░░░░░▌
+▐░█▀▀▀▀▀▀▀▀▀ ▐░▌       ▐░▌ ▀▀▀▀▀▀▀▀▀█░▌
+▐░█▄▄▄▄▄▄▄▄▄ ▐░█▄▄▄▄▄▄▄█░▌ ▄▄▄▄▄▄▄▄▄█░▌
+▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌
+ ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀
+"""

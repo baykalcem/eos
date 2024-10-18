@@ -1,3 +1,5 @@
+import asyncio
+import itertools
 from typing import Any
 
 import ray
@@ -8,10 +10,10 @@ from eos.configuration.configuration_manager import ConfigurationManager
 from eos.configuration.constants import EOS_COMPUTER_NAME
 from eos.devices.entities.device import Device, DeviceStatus
 from eos.devices.exceptions import EosDeviceStateError, EosDeviceInitializationError
+from eos.devices.repositories.device_repository import DeviceRepository
 from eos.logging.batch_error_logger import batch_error, raise_batched_errors
 from eos.logging.logger import log
-from eos.persistence.db_manager import DbManager
-from eos.persistence.mongo_repository import MongoRepository
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
 
 
 class DeviceManager:
@@ -19,44 +21,50 @@ class DeviceManager:
     Provides methods for interacting with the devices in a lab.
     """
 
-    def __init__(self, configuration_manager: ConfigurationManager, db_manager: DbManager):
+    def __init__(self, configuration_manager: ConfigurationManager, db_interface: AsyncMongoDbInterface):
         self._configuration_manager = configuration_manager
-
-        self._devices = MongoRepository("devices", db_manager)
-        self._devices.create_indices([("lab_id", 1), ("id", 1)], unique=True)
+        self._session_factory = db_interface.session_factory
+        self._devices = None
 
         self._device_plugin_registry = configuration_manager.devices
         self._device_actor_handles: dict[str, ActorHandle] = {}
         self._device_actor_computer_ips: dict[str, str] = {}
 
+    async def initialize(self, db_interface: AsyncMongoDbInterface) -> None:
+        self._devices = DeviceRepository(db_interface)
+        await self._devices.initialize()
+
         log.debug("Device manager initialized.")
 
-    def get_device(self, lab_id: str, device_id: str) -> Device | None:
+    async def get_device(self, lab_id: str, device_id: str) -> Device | None:
         """
-        Get a device by its ID.
+        Get a device by its lab and device ID.
+
+        :param lab_id: The ID of the lab the device is in.
+        :param device_id: The ID of the device in the lab.
         """
-        device = self._devices.get_one(lab_id=lab_id, id=device_id)
+        device = await self._devices.get_one(lab_id=lab_id, id=device_id)
         if not device:
             return None
         return Device(**device)
 
-    def get_devices(self, **query: dict[str, Any]) -> list[Device]:
+    async def get_devices(self, **query: dict[str, Any]) -> list[Device]:
         """
-        Query devices with arbitrary parameters.
+        Query devices with arbitrary parameters and return a list of matching devices.
 
         :param query: Dictionary of query parameters.
         """
-        devices = self._devices.get_all(**query)
+        devices = await self._devices.get_all(**query)
         return [Device(**device) for device in devices]
 
-    def set_device_status(self, lab_id: str, device_id: str, status: DeviceStatus) -> None:
+    async def set_device_status(self, lab_id: str, device_id: str, status: DeviceStatus) -> None:
         """
         Set the status of a device.
         """
-        if not self._devices.exists(lab_id=lab_id, id=device_id):
+        if not await self._devices.exists(lab_id=lab_id, id=device_id):
             raise EosDeviceStateError(f"Device '{device_id}' in lab '{lab_id}' does not exist.")
 
-        self._devices.update({"status": status.value}, lab_id=lab_id, id=device_id)
+        await self._devices.update_one({"status": status.value}, lab_id=lab_id, id=device_id)
 
     def get_device_actor(self, lab_id: str, device_id: str) -> ActorHandle:
         """
@@ -68,41 +76,56 @@ class DeviceManager:
 
         return self._device_actor_handles.get(actor_id)
 
-    def update_devices(self, loaded_labs: set[str] | None = None, unloaded_labs: set[str] | None = None) -> None:
+    async def update_devices(self, loaded_labs: set[str] | None = None, unloaded_labs: set[str] | None = None) -> None:
         if unloaded_labs:
-            for lab_id in unloaded_labs:
-                self._remove_devices_for_lab(lab_id)
+            await self.cleanup_device_actors(lab_ids=list(unloaded_labs))
 
         if loaded_labs:
-            for lab_id in loaded_labs:
-                self._create_devices_for_lab(lab_id)
+            creation_tasks = [self._create_devices_for_lab(lab_id) for lab_id in loaded_labs]
+            await asyncio.gather(*creation_tasks)
 
         self._check_device_actors_healthy()
         log.debug("Devices have been updated.")
 
-    def cleanup_device_actors(self) -> None:
-        for actor in self._device_actor_handles.values():
-            ray.kill(actor)
-        self._device_actor_handles.clear()
-        self._device_actor_computer_ips.clear()
-        self._devices.delete()
-        log.info("All device actors have been cleaned up.")
+    async def cleanup_device_actors(self, lab_ids: list[str] | None = None) -> None:
+        """
+        Terminate device actors, optionally for specific labs.
 
-    def _remove_devices_for_lab(self, lab_id: str) -> None:
-        devices_to_remove = self.get_devices(lab_id=lab_id)
-        for device in devices_to_remove:
-            actor_id = device.get_actor_id()
+        :param lab_ids: If provided, cleanup devices for these labs.
+                        If None, cleanup all devices.
+        """
+        if lab_ids:
+            devices_by_lab = await self._devices.get_devices_by_lab_ids(lab_ids)
+            devices_to_remove = list(itertools.chain(*devices_by_lab.values()))
+            actor_ids = [Device(**device).get_actor_id() for device in devices_to_remove]
+        else:
+            actor_ids = list(self._device_actor_handles.keys())
+
+        async def cleanup_device(actor_id: str) -> None:
             if actor_id in self._device_actor_handles:
+                await self._device_actor_handles[actor_id].cleanup.remote()
                 ray.kill(self._device_actor_handles[actor_id])
                 del self._device_actor_handles[actor_id]
                 del self._device_actor_computer_ips[actor_id]
-        self._devices.delete(lab_id=lab_id)
-        log.debug(f"Removed devices for lab '{lab_id}'")
 
-    def _create_devices_for_lab(self, lab_id: str) -> None:
+        await asyncio.gather(*[cleanup_device(actor_id) for actor_id in actor_ids])
+
+        if lab_ids:
+            await self._devices.delete_devices_by_lab_ids(lab_ids)
+            log.debug(f"Cleaned up devices for lab(s): {', '.join(lab_ids)}")
+        else:
+            await self._devices.delete_all()
+            log.info("All devices have been cleaned up.")
+
+    async def _create_devices_for_lab(self, lab_id: str) -> None:
         lab_config = self._configuration_manager.labs[lab_id]
+
+        existing_devices = {device["id"]: Device(**device) for device in await self._devices.get_all(lab_id=lab_id)}
+
+        devices_to_upsert: list[Device] = []
+
         for device_id, device_config in lab_config.devices.items():
-            device = self.get_device(lab_id, device_id)
+            device = existing_devices.get(device_id)
 
             if device and device.get_actor_id() in self._device_actor_handles:
                 continue
@@ -110,17 +133,20 @@ class DeviceManager:
             if device and device.actor_handle:
                 self._restore_device_actor(device)
             else:
-                device = Device(
+                new_device = Device(
                     lab_id=lab_id,
                     id=device_id,
                     type=device_config.type,
                     location=device_config.location,
                     computer=device_config.computer,
                 )
-                self._devices.update(device.model_dump(), lab_id=lab_id, id=device_id)
-                self._create_device_actor(device)
+                devices_to_upsert.append(new_device)
+                self._create_device_actor(new_device)
 
-        log.debug(f"Created devices for lab '{lab_id}'")
+        if devices_to_upsert:
+            await self._devices.bulk_upsert([device.model_dump() for device in devices_to_upsert])
+
+        log.debug(f"Updated devices for lab '{lab_id}'")
 
     def _restore_device_actor(self, device: Device) -> None:
         """

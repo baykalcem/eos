@@ -33,10 +33,11 @@ DYNAMIC_PARAMETERS = {
     indirect=True,
 )
 class TestExperimentExecutor:
-    def test_start_experiment(self, experiment_executor, experiment_manager):
-        experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
+    @pytest.mark.asyncio
+    async def test_start_experiment(self, experiment_executor, experiment_manager):
+        await experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
 
-        experiment = experiment_manager.get_experiment(EXPERIMENT_ID)
+        experiment = await experiment_manager.get_experiment(EXPERIMENT_ID)
         assert experiment is not None
         assert experiment.id == EXPERIMENT_ID
         assert experiment.status == ExperimentStatus.RUNNING
@@ -44,7 +45,7 @@ class TestExperimentExecutor:
     @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_progress_experiment(self, experiment_executor, experiment_manager, task_manager):
-        experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
+        await experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
 
         experiment_completed = await experiment_executor.progress_experiment()
         assert not experiment_completed
@@ -52,48 +53,48 @@ class TestExperimentExecutor:
 
         experiment_completed = await experiment_executor.progress_experiment()
         assert not experiment_completed
-        task = task_manager.get_task(EXPERIMENT_ID, "mixing")
+        task = await task_manager.get_task(EXPERIMENT_ID, "mixing")
         assert task is not None
         assert task.status == TaskStatus.COMPLETED
         await experiment_executor._task_output_futures["evaporation"]
 
         experiment_completed = await experiment_executor.progress_experiment()
-        task = task_manager.get_task(EXPERIMENT_ID, "evaporation")
+        task = await task_manager.get_task(EXPERIMENT_ID, "evaporation")
         assert task.status == TaskStatus.COMPLETED
         assert not experiment_completed
 
         # Final progress
         experiment_completed = await experiment_executor.progress_experiment()
         assert experiment_completed
-        experiment = experiment_manager.get_experiment(EXPERIMENT_ID)
+        experiment = await experiment_manager.get_experiment(EXPERIMENT_ID)
         assert experiment.status == ExperimentStatus.COMPLETED
 
     @pytest.mark.asyncio
     async def test_task_output_registration(self, experiment_executor, task_manager):
-        experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
+        await experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
 
         experiment_completed = False
         while not experiment_completed:
             experiment_completed = await experiment_executor.progress_experiment()
             await asyncio.sleep(0.1)
 
-        mixing_output = task_manager.get_task_output(EXPERIMENT_ID, "mixing")
+        mixing_output = await task_manager.get_task_output(EXPERIMENT_ID, "mixing")
         assert mixing_output is not None
         assert mixing_output.parameters["mixing_time"] == DYNAMIC_PARAMETERS["mixing"]["time"]
 
     @pytest.mark.asyncio
     async def test_resolve_input_parameter_references_and_dynamic_parameters(self, experiment_executor, task_manager):
-        experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
+        await experiment_executor.start_experiment(DYNAMIC_PARAMETERS)
 
         experiment_completed = False
         while not experiment_completed:
             experiment_completed = await experiment_executor.progress_experiment()
             await asyncio.sleep(0.1)
 
-        mixing_task = task_manager.get_task(EXPERIMENT_ID, "mixing")
-        mixing_result = task_manager.get_task_output(EXPERIMENT_ID, "mixing")
+        mixing_task = await task_manager.get_task(EXPERIMENT_ID, "mixing")
+        mixing_result = await task_manager.get_task_output(EXPERIMENT_ID, "mixing")
 
-        evaporation_task = task_manager.get_task(EXPERIMENT_ID, "evaporation")
+        evaporation_task = await task_manager.get_task(EXPERIMENT_ID, "evaporation")
         # Check the dynamic parameter for input mixing time
         assert mixing_task.input.parameters["time"] == DYNAMIC_PARAMETERS["mixing"]["time"]
 
@@ -110,11 +111,12 @@ class TestExperimentExecutor:
             ExperimentStatus.RUNNING,
         ],
     )
-    def test_handle_existing_experiment(self, experiment_executor, experiment_manager, experiment_status):
-        experiment_manager.create_experiment(
+    @pytest.mark.asyncio
+    async def test_handle_existing_experiment(self, experiment_executor, experiment_manager, experiment_status):
+        await experiment_manager.create_experiment(
             EXPERIMENT_ID, EXPERIMENT_TYPE, experiment_executor._execution_parameters, {}, {}
         )
-        experiment_manager._set_experiment_status(EXPERIMENT_ID, experiment_status)
+        await experiment_manager._set_experiment_status(EXPERIMENT_ID, experiment_status)
 
         experiment_executor._execution_parameters.resume = False
         with patch.object(experiment_executor, "_resume_experiment") as mock_resume:
@@ -125,16 +127,19 @@ class TestExperimentExecutor:
                 ExperimentStatus.FAILED,
             ]:
                 with pytest.raises(EosExperimentExecutionError) as exc_info:
-                    experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+                    experiment = await experiment_manager.get_experiment(EXPERIMENT_ID)
+                    await experiment_executor._handle_existing_experiment(experiment)
                 assert experiment_status.name.lower() in str(exc_info.value)
                 mock_resume.assert_not_called()
             else:
-                experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+                experiment = await experiment_manager.get_experiment(EXPERIMENT_ID)
+                await experiment_executor._handle_existing_experiment(experiment)
                 mock_resume.assert_not_called()
 
         experiment_executor._execution_parameters.resume = True
         with patch.object(experiment_executor, "_resume_experiment") as mock_resume:
-            experiment_executor._handle_existing_experiment(experiment_manager.get_experiment(EXPERIMENT_ID))
+            experiment = await experiment_manager.get_experiment(EXPERIMENT_ID)
+            await experiment_executor._handle_existing_experiment(experiment)
             mock_resume.assert_called_once()
 
         assert experiment_executor._experiment_status == experiment_status

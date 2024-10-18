@@ -8,9 +8,9 @@ from eos.persistence.exceptions import EosFileDbError
 from eos.persistence.service_credentials import ServiceCredentials
 
 
-class FileDbManager:
+class FileDbInterface:
     """
-    Responsible for storing and retrieving files from a MinIO server.
+    Provides access to a MinIO server for storing and retrieving files.
     """
 
     def __init__(self, file_db_credentials: ServiceCredentials, bucket_name: str = "eos"):

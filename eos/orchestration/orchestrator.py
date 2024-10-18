@@ -1,5 +1,4 @@
 import asyncio
-import atexit
 import traceback
 from asyncio import Lock as AsyncLock
 from collections.abc import AsyncIterable
@@ -29,16 +28,16 @@ from eos.monitoring.graceful_termination_monitor import GracefulTerminationMonit
 from eos.orchestration.exceptions import (
     EosExperimentTypeInUseError,
     EosExperimentDoesNotExistError,
-    EosError,
 )
-from eos.persistence.db_manager import DbManager
-from eos.persistence.file_db_manager import FileDbManager
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
+from eos.persistence.file_db_interface import FileDbInterface
 from eos.persistence.service_credentials import ServiceCredentials
 from eos.resource_allocation.resource_allocation_manager import (
     ResourceAllocationManager,
 )
 from eos.scheduling.greedy_scheduler import GreedyScheduler
 from eos.tasks.entities.task import Task, TaskStatus
+from eos.tasks.exceptions import EosTaskCancellationError
 from eos.tasks.on_demand_task_executor import OnDemandTaskExecutor
 from eos.tasks.task_executor import TaskExecutor
 from eos.tasks.task_manager import TaskManager
@@ -63,12 +62,37 @@ class Orchestrator(metaclass=Singleton):
         self._user_dir = user_dir
         self._db_credentials = db_credentials
         self._file_db_credentials = file_db_credentials
+
         self._initialized = False
 
-        self.initialize()
-        atexit.register(self.terminate)
+        self._configuration_manager: ConfigurationManager | None = None
+        self._db_interface: AsyncMongoDbInterface | None = None
+        self._file_db_interface: FileDbInterface | None = None
+        self._graceful_termination_monitor: GracefulTerminationMonitor | None = None
+        self._device_manager: DeviceManager | None = None
+        self._container_manager: ContainerManager | None = None
+        self._resource_allocation_manager: ResourceAllocationManager | None = None
+        self._task_manager: TaskManager | None = None
+        self._experiment_manager: ExperimentManager | None = None
+        self._campaign_manager: CampaignManager | None = None
+        self._campaign_optimizer_manager: CampaignOptimizerManager | None = None
+        self._task_executor: TaskExecutor | None = None
+        self._on_demand_task_executor: OnDemandTaskExecutor | None = None
+        self._scheduler: GreedyScheduler | None = None
+        self._experiment_executor_factory: ExperimentExecutorFactory | None = None
+        self._campaign_executor_factory: CampaignExecutorFactory | None = None
 
-    def initialize(self) -> None:
+        self._campaign_submission_lock = AsyncLock()
+        self._submitted_campaigns: dict[str, CampaignExecutor] = {}
+        self._experiment_submission_lock = AsyncLock()
+        self._submitted_experiments: dict[str, ExperimentExecutor] = {}
+
+        self._campaign_cancellation_queue = asyncio.Queue(maxsize=100)
+        self._experiment_cancellation_queue = asyncio.Queue(maxsize=100)
+
+        self._loading_lock = AsyncLock()
+
+    async def initialize(self) -> None:
         """
         Prepare the orchestrator. This is required before any other operations can be performed.
         """
@@ -84,20 +108,33 @@ class Orchestrator(metaclass=Singleton):
         self._configuration_manager = ConfigurationManager(self._user_dir)
 
         # Persistence #############################################
-        self._db_manager = DbManager(self._db_credentials)
-        self._file_db_manager = FileDbManager(self._file_db_credentials)
-
-        # Monitoring ##############################################
-        self._graceful_termination_monitor = GracefulTerminationMonitor(self._db_manager)
+        self._db_interface = AsyncMongoDbInterface(self._db_credentials)
+        self._file_db_interface = FileDbInterface(self._file_db_credentials)
 
         # State management ########################################
-        self._device_manager = DeviceManager(self._configuration_manager, self._db_manager)
-        self._container_manager = ContainerManager(self._configuration_manager, self._db_manager)
-        self._resource_allocation_manager = ResourceAllocationManager(self._configuration_manager, self._db_manager)
-        self._task_manager = TaskManager(self._configuration_manager, self._db_manager, self._file_db_manager)
-        self._experiment_manager = ExperimentManager(self._configuration_manager, self._db_manager)
-        self._campaign_manager = CampaignManager(self._configuration_manager, self._db_manager)
-        self._campaign_optimizer_manager = CampaignOptimizerManager(self._configuration_manager, self._db_manager)
+        self._graceful_termination_monitor = GracefulTerminationMonitor(self._db_interface)
+        await self._graceful_termination_monitor.initialize()
+
+        self._device_manager = DeviceManager(self._configuration_manager, self._db_interface)
+        await self._device_manager.initialize(self._db_interface)
+
+        self._container_manager = ContainerManager(self._configuration_manager, self._db_interface)
+        await self._container_manager.initialize(self._db_interface)
+
+        self._resource_allocation_manager = ResourceAllocationManager(self._db_interface)
+        await self._resource_allocation_manager.initialize(self._configuration_manager, self._db_interface)
+
+        self._task_manager = TaskManager(self._configuration_manager, self._db_interface, self._file_db_interface)
+        await self._task_manager.initialize(self._db_interface)
+
+        self._experiment_manager = ExperimentManager(self._configuration_manager, self._db_interface)
+        await self._experiment_manager.initialize(self._db_interface)
+
+        self._campaign_manager = CampaignManager(self._configuration_manager, self._db_interface)
+        await self._campaign_manager.initialize(self._db_interface)
+
+        self._campaign_optimizer_manager = CampaignOptimizerManager(self._configuration_manager, self._db_interface)
+        await self._campaign_optimizer_manager.initialize(self._db_interface)
 
         # Execution ###############################################
         self._task_executor = TaskExecutor(
@@ -133,39 +170,29 @@ class Orchestrator(metaclass=Singleton):
             self._experiment_executor_factory,
         )
 
-        self._campaign_submission_lock = AsyncLock()
-        self._submitted_campaigns: dict[str, CampaignExecutor] = {}
-        self._experiment_submission_lock = AsyncLock()
-        self._submitted_experiments: dict[str, ExperimentExecutor] = {}
-
-        self._campaign_cancellation_queue = asyncio.Queue(maxsize=100)
-        self._experiment_cancellation_queue = asyncio.Queue(maxsize=100)
-
-        self._loading_lock = AsyncLock()
-
-        self._fail_all_running_work()
+        await self._fail_all_running_work()
 
         self._initialized = True
 
-    def _fail_all_running_work(self) -> None:
+    async def _fail_all_running_work(self) -> None:
         """
         When the orchestrator starts, fail all running tasks, experiments, and campaigns.
         This is for safety, as if the orchestrator was terminated while there was running work then the state of the
         system may be unknown. We want to force manual review of the state of the system and explicitly require
         re-submission of any work that was running.
         """
-        running_tasks = self._task_manager.get_tasks(status=TaskStatus.RUNNING.value)
+        running_tasks = await self._task_manager.get_tasks(status=TaskStatus.RUNNING.value)
         for task in running_tasks:
-            self._task_manager.fail_task(task.experiment_id, task.id)
+            await self._task_manager.fail_task(task.experiment_id, task.id)
             log.warning(f"EXP '{task.experiment_id}' - Failed task '{task.id}'.")
 
-        running_experiments = self._experiment_manager.get_experiments(status=ExperimentStatus.RUNNING.value)
+        running_experiments = await self._experiment_manager.get_experiments(status=ExperimentStatus.RUNNING.value)
         for experiment in running_experiments:
-            self._experiment_manager.fail_experiment(experiment.id)
+            await self._experiment_manager.fail_experiment(experiment.id)
 
-        running_campaigns = self._campaign_manager.get_campaigns(status=CampaignStatus.RUNNING.value)
+        running_campaigns = await self._campaign_manager.get_campaigns(status=CampaignStatus.RUNNING.value)
         for campaign in running_campaigns:
-            self._campaign_manager.fail_campaign(campaign.id)
+            await self._campaign_manager.fail_campaign(campaign.id)
 
         if running_tasks:
             log.warning("All running tasks have been marked as failed. Please review the state of the system.")
@@ -182,7 +209,7 @@ class Orchestrator(metaclass=Singleton):
                 "with resume=True."
             )
 
-    def terminate(self) -> None:
+    async def terminate(self) -> None:
         """
         Terminate the orchestrator. After this, no other operations can be performed.
         This should be called before the program exits.
@@ -190,27 +217,27 @@ class Orchestrator(metaclass=Singleton):
         if not self._initialized:
             return
         log.info("Cleaning up device actors...")
-        self._device_manager.cleanup_device_actors()
+        await self._device_manager.cleanup_device_actors()
         log.info("Shutting down Ray cluster...")
         ray.shutdown()
-        self._graceful_termination_monitor.terminated_gracefully()
+        await self._graceful_termination_monitor.set_terminated_gracefully()
         self._initialized = False
 
-    def load_labs(self, labs: set[str]) -> None:
+    async def load_labs(self, labs: set[str]) -> None:
         """
         Load one or more labs into the orchestrator.
         """
         self._configuration_manager.load_labs(labs)
-        self._device_manager.update_devices(loaded_labs=labs)
-        self._container_manager.update_containers(loaded_labs=labs)
+        await self._device_manager.update_devices(loaded_labs=labs)
+        await self._container_manager.update_containers(loaded_labs=labs)
 
-    def unload_labs(self, labs: set[str]) -> None:
+    async def unload_labs(self, labs: set[str]) -> None:
         """
         Unload one or more labs from the orchestrator.
         """
         self._configuration_manager.unload_labs(labs)
-        self._device_manager.update_devices(unloaded_labs=labs)
-        self._container_manager.update_containers(unloaded_labs=labs)
+        await self._device_manager.update_devices(unloaded_labs=labs)
+        await self._container_manager.update_containers(unloaded_labs=labs)
 
     async def reload_labs(self, lab_types: set[str]) -> None:
         """
@@ -219,22 +246,23 @@ class Orchestrator(metaclass=Singleton):
         async with self._loading_lock:
             experiments_to_reload = set()
             for lab_type in lab_types:
-                existing_experiments = self._experiment_manager.get_experiments(status=ExperimentStatus.RUNNING.value)
+                existing_experiments = await self._experiment_manager.get_experiments(
+                    status=ExperimentStatus.RUNNING.value
+                )
 
                 for experiment in existing_experiments:
                     experiment_config = self._configuration_manager.experiments[experiment.type]
                     if lab_type in experiment_config.labs:
-                        raise EosExperimentTypeInUseError(
-                            f"Cannot reload lab type '{lab_type}' as there are running experiments that use it."
-                        )
+                        log.error(f"Cannot reload lab type '{lab_type}' as there are running experiments that use it.")
+                        raise EosExperimentTypeInUseError
 
                 # Determine experiments to reload for this lab type
                 for experiment_type, experiment_config in self._configuration_manager.experiments.items():
                     if lab_type in experiment_config.labs:
                         experiments_to_reload.add(experiment_type)
             try:
-                self.unload_labs(lab_types)
-                self.load_labs(lab_types)
+                await self.unload_labs(lab_types)
+                await self.load_labs(lab_types)
                 self.load_experiments(experiments_to_reload)
             except EosConfigurationError:
                 log.error(f"Error reloading labs: {traceback.format_exc()}")
@@ -254,18 +282,19 @@ class Orchestrator(metaclass=Singleton):
             to_load = lab_types - currently_loaded
 
             for lab_type in to_unload:
-                existing_experiments = self._experiment_manager.get_experiments(status=ExperimentStatus.RUNNING.value)
+                existing_experiments = await self._experiment_manager.get_experiments(
+                    status=ExperimentStatus.RUNNING.value
+                )
 
                 for experiment in existing_experiments:
                     experiment_config = self._configuration_manager.experiments[experiment.type]
                     if lab_type in experiment_config.labs:
-                        raise EosExperimentTypeInUseError(
-                            f"Cannot unload lab type '{lab_type}' as there are running experiments that use it."
-                        )
+                        log.error(f"Cannot unload lab type '{lab_type}' as there are running experiments that use it.")
+                        raise EosExperimentTypeInUseError
 
             try:
-                self.unload_labs(to_unload)
-                self.load_labs(to_load)
+                await self.unload_labs(to_unload)
+                await self.load_labs(to_load)
             except EosConfigurationError:
                 log.error(f"Error updating loaded labs: {traceback.format_exc()}")
                 raise
@@ -294,14 +323,15 @@ class Orchestrator(metaclass=Singleton):
         """
         async with self._loading_lock:
             for experiment_type in experiment_types:
-                existing_experiments = self._experiment_manager.get_experiments(
+                existing_experiments = await self._experiment_manager.get_experiments(
                     status=ExperimentStatus.RUNNING.value, type=experiment_type
                 )
                 if existing_experiments:
-                    raise EosExperimentTypeInUseError(
+                    log.error(
                         f"Cannot reload experiment type '{experiment_type}' as there are running experiments of this "
                         f"type."
                     )
+                    raise EosExperimentTypeInUseError
             try:
                 self.unload_experiments(experiment_types)
                 self.load_experiments(experiment_types)
@@ -323,14 +353,15 @@ class Orchestrator(metaclass=Singleton):
             to_load = experiment_types - currently_loaded
 
             for experiment_type in to_unload:
-                existing_experiments = self._experiment_manager.get_experiments(
+                existing_experiments = await self._experiment_manager.get_experiments(
                     status=ExperimentStatus.RUNNING.value, type=experiment_type
                 )
                 if existing_experiments:
-                    raise EosExperimentTypeInUseError(
+                    log.error(
                         f"Cannot unload experiment type '{experiment_type}' as there are running experiments of this "
                         f"type."
                     )
+                    raise EosExperimentTypeInUseError
 
             try:
                 self.unload_experiments(to_unload)
@@ -388,9 +419,9 @@ class Orchestrator(metaclass=Singleton):
         :param task_id: The unique identifier of the task.
         :return: The task entity.
         """
-        return self._task_manager.get_task(experiment_id, task_id)
+        return await self._task_manager.get_task(experiment_id, task_id)
 
-    async def submit_task(
+    def submit_task(
         self,
         task_config: TaskConfig,
         resource_allocation_priority: int = 1,
@@ -406,7 +437,7 @@ class Orchestrator(metaclass=Singleton):
         error.
         :return: The output of the task.
         """
-        await self._on_demand_task_executor.submit_task(
+        self._on_demand_task_executor.submit_task(
             task_config, resource_allocation_priority, resource_allocation_timeout
         )
 
@@ -417,10 +448,13 @@ class Orchestrator(metaclass=Singleton):
         :param task_id: The unique identifier of the task.
         :param experiment_id: The unique identifier of the experiment.
         """
-        if experiment_id == "on_demand":
-            await self._on_demand_task_executor.cancel_task(task_id)
-        else:
-            await self._task_executor.request_task_cancellation(experiment_id, task_id)
+        try:
+            if experiment_id == "on_demand":
+                await self._on_demand_task_executor.request_task_cancellation(task_id)
+            else:
+                await self._task_executor.request_task_cancellation(experiment_id, task_id)
+        except EosTaskCancellationError:
+            log.error(f"Failed to cancel task '{task_id}'.")
 
     async def get_task_types(self) -> list[str]:
         """
@@ -434,7 +468,7 @@ class Orchestrator(metaclass=Singleton):
         """
         task_spec = self._configuration_manager.task_specs.get_spec_by_type(task_type)
         if not task_spec:
-            raise EosError(f"Task type '{task_type}' does not exist.")
+            log.error(f"Task type '{task_type}' does not exist.")
 
         return task_spec
 
@@ -459,7 +493,7 @@ class Orchestrator(metaclass=Singleton):
         :param experiment_id: The unique identifier of the experiment.
         :return: The experiment entity.
         """
-        return self._experiment_manager.get_experiment(experiment_id)
+        return await self._experiment_manager.get_experiment(experiment_id)
 
     async def submit_experiment(
         self,
@@ -491,7 +525,7 @@ class Orchestrator(metaclass=Singleton):
             )
 
             try:
-                experiment_executor.start_experiment(dynamic_parameters, metadata)
+                await experiment_executor.start_experiment(dynamic_parameters, metadata)
                 self._submitted_experiments[experiment_id] = experiment_executor
             except EosExperimentExecutionError:
                 log.error(f"Failed to submit experiment '{experiment_id}': {traceback.format_exc()}")
@@ -542,7 +576,7 @@ class Orchestrator(metaclass=Singleton):
         :param campaign_id: The unique identifier of the campaign.
         :return: The campaign entity.
         """
-        return self._campaign_manager.get_campaign(campaign_id)
+        return await self._campaign_manager.get_campaign(campaign_id)
 
     async def submit_campaign(
         self,
@@ -580,46 +614,56 @@ class Orchestrator(metaclass=Singleton):
         if campaign_id in self._submitted_campaigns:
             await self._campaign_cancellation_queue.put(campaign_id)
 
-    async def spin(self, rate_hz: int = 10) -> None:
+    async def spin(self, rate_hz: int = 5) -> None:
         """
-        Spin the orchestrator at a given rate in Hz.
+        Spin the orchestrator at a given rate in Hz. Process submitted work.
 
-        :param rate_hz: The processing rate in Hz. This is the rate in which the orchestrator will check for progress in
-         submitted experiments and campaigns.
+        :param rate_hz: The processing rate in Hz. This is the rate in which the orchestrator updates.
         """
         while True:
-            await self._process_experiment_and_campaign_cancellations()
+            await self._process_experiment_cancellations()
+            await self._process_campaign_cancellations()
 
             await asyncio.gather(
                 self._process_on_demand_tasks(),
                 self._process_experiments(),
                 self._process_campaigns(),
             )
-            self._resource_allocation_manager.process_active_requests()
+
+            await self._resource_allocation_manager.process_active_requests()
 
             await asyncio.sleep(1 / rate_hz)
 
-    async def _process_experiment_and_campaign_cancellations(self) -> None:
+    async def _process_experiment_cancellations(self) -> None:
+        experiment_ids = []
         while not self._experiment_cancellation_queue.empty():
-            experiment_id = await self._experiment_cancellation_queue.get()
+            experiment_ids.append(await self._experiment_cancellation_queue.get())
 
-            log.warning(f"Attempting to cancel experiment '{experiment_id}'.")
-            try:
-                await self._submitted_experiments[experiment_id].cancel_experiment()
-            finally:
-                del self._submitted_experiments[experiment_id]
-            log.warning(f"Cancelled experiment '{experiment_id}'.")
+        if experiment_ids:
+            log.warning(f"Attempting to cancel experiments: {experiment_ids}")
+            experiment_cancel_tasks = [
+                self._submitted_experiments[exp_id].cancel_experiment() for exp_id in experiment_ids
+            ]
+            await asyncio.gather(*experiment_cancel_tasks)
 
+            for exp_id in experiment_ids:
+                del self._submitted_experiments[exp_id]
+            log.warning(f"Cancelled experiments: {experiment_ids}")
+
+    async def _process_campaign_cancellations(self) -> None:
+        campaign_ids = []
         while not self._campaign_cancellation_queue.empty():
-            campaign_id = await self._campaign_cancellation_queue.get()
+            campaign_ids.append(await self._campaign_cancellation_queue.get())
 
-            log.warning(f"Attempting to cancel campaign '{campaign_id}'.")
-            try:
-                await self._submitted_campaigns[campaign_id].cancel_campaign()
-            finally:
+        if campaign_ids:
+            log.warning(f"Attempting to cancel campaigns: {campaign_ids}")
+            campaign_cancel_tasks = [self._submitted_campaigns[camp_id].cancel_campaign() for camp_id in campaign_ids]
+            await asyncio.gather(*campaign_cancel_tasks)
+
+            for campaign_id in campaign_ids:
                 self._submitted_campaigns[campaign_id].cleanup()
                 del self._submitted_campaigns[campaign_id]
-            log.warning(f"Cancelled campaign '{campaign_id}'.")
+            log.warning(f"Cancelled campaigns: {campaign_ids}")
 
     async def _process_experiments(self) -> None:
         to_remove_completed = []
@@ -680,42 +724,5 @@ class Orchestrator(metaclass=Singleton):
 
     def _validate_experiment_type_exists(self, experiment_type: str) -> None:
         if experiment_type not in self._configuration_manager.experiments:
-            raise EosExperimentDoesNotExistError(
-                f"Cannot submit experiment of type '{experiment_type}' as it does not exist."
-            )
-
-    @property
-    def configuration_manager(self) -> ConfigurationManager:
-        return self._configuration_manager
-
-    @property
-    def db_manager(self) -> DbManager:
-        return self._db_manager
-
-    @property
-    def device_manager(self) -> DeviceManager:
-        return self._device_manager
-
-    @property
-    def container_manager(self) -> ContainerManager:
-        return self._container_manager
-
-    @property
-    def resource_allocation_manager(self) -> ResourceAllocationManager:
-        return self._resource_allocation_manager
-
-    @property
-    def task_manager(self) -> TaskManager:
-        return self._task_manager
-
-    @property
-    def experiment_manager(self) -> ExperimentManager:
-        return self._experiment_manager
-
-    @property
-    def campaign_manager(self) -> CampaignManager:
-        return self._campaign_manager
-
-    @property
-    def task_executor(self) -> TaskExecutor:
-        return self._task_executor
+            log.error(f"Cannot submit experiment of type '{experiment_type}' as it does not exist.")
+            raise EosExperimentDoesNotExistError

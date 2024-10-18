@@ -10,7 +10,7 @@ import typer
 
 
 def start_web_api(
-    host: Annotated[str, typer.Option("--host", help="Host for the EOS web API server")] = "0.0.0.0",
+    host: Annotated[str, typer.Option("--host", help="Host for the EOS web API server")] = "localhost",
     port: Annotated[int, typer.Option("--port", help="Port for the EOS web API server")] = 8000,
     orchestrator_host: Annotated[
         str, typer.Option("--orchestrator-host", help="Host for the EOS orchestrator server")

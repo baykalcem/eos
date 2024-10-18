@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,7 +9,7 @@ from eos.configuration.configuration_manager import ConfigurationManager
 from eos.experiments.entities.experiment import ExperimentStatus
 from eos.experiments.repositories.experiment_repository import ExperimentRepository
 from eos.logging.logger import log
-from eos.persistence.db_manager import DbManager
+from eos.persistence.async_mongodb_interface import AsyncMongoDbInterface
 from eos.tasks.repositories.task_repository import TaskRepository
 
 
@@ -17,16 +18,26 @@ class CampaignManager:
     Responsible for managing the state of all experiment campaigns in EOS and tracking their execution.
     """
 
-    def __init__(self, configuration_manager: ConfigurationManager, db_manager: DbManager):
+    def __init__(self, configuration_manager: ConfigurationManager, db_interface: AsyncMongoDbInterface):
         self._configuration_manager = configuration_manager
-        self._campaigns = CampaignRepository("campaigns", db_manager)
-        self._campaigns.create_indices([("id", 1)], unique=True)
-        self._experiments = ExperimentRepository("experiments", db_manager)
-        self._tasks = TaskRepository("tasks", db_manager)
+        self._session_factory = db_interface.session_factory
+        self._campaigns = None
+        self._experiments = None
+        self._tasks = None
+
+    async def initialize(self, db_interface: AsyncMongoDbInterface) -> None:
+        self._campaigns = CampaignRepository(db_interface)
+        await self._campaigns.initialize()
+
+        self._experiments = ExperimentRepository(db_interface)
+        await self._experiments.initialize()
+
+        self._tasks = TaskRepository(db_interface)
+        await self._tasks.initialize()
 
         log.debug("Campaign manager initialized.")
 
-    def create_campaign(
+    async def create_campaign(
         self,
         campaign_id: str,
         experiment_type: str,
@@ -41,7 +52,7 @@ class CampaignManager:
         :param execution_parameters: Parameters for the execution of the campaign.
         :param metadata: Additional metadata to be stored with the campaign.
         """
-        if self._campaigns.get_one(id=campaign_id):
+        if await self._campaigns.get_one(id=campaign_id):
             raise EosCampaignStateError(f"Campaign '{campaign_id}' already exists.")
 
         experiment_config = self._configuration_manager.experiments.get(experiment_type)
@@ -54,68 +65,68 @@ class CampaignManager:
             execution_parameters=execution_parameters,
             metadata=metadata or {},
         )
-        self._campaigns.create(campaign.model_dump())
+        await self._campaigns.create(campaign.model_dump())
 
         log.info(f"Created campaign '{campaign_id}'.")
 
-    def delete_campaign(self, campaign_id: str) -> None:
+    async def delete_campaign(self, campaign_id: str) -> None:
         """
         Delete a campaign.
         """
         if not self._campaigns.exists(id=campaign_id):
             raise EosCampaignStateError(f"Campaign '{campaign_id}' does not exist.")
 
-        self._campaigns.delete(id=campaign_id)
+        await self._campaigns.delete_one(id=campaign_id)
 
         log.info(f"Deleted campaign '{campaign_id}'.")
 
-    def start_campaign(self, campaign_id: str) -> None:
+    async def start_campaign(self, campaign_id: str) -> None:
         """
         Start a campaign.
         """
-        self._set_campaign_status(campaign_id, CampaignStatus.RUNNING)
+        await self._set_campaign_status(campaign_id, CampaignStatus.RUNNING)
 
-    def complete_campaign(self, campaign_id: str) -> None:
+    async def complete_campaign(self, campaign_id: str) -> None:
         """
         Complete a campaign.
         """
-        self._set_campaign_status(campaign_id, CampaignStatus.COMPLETED)
+        await self._set_campaign_status(campaign_id, CampaignStatus.COMPLETED)
 
-    def cancel_campaign(self, campaign_id: str) -> None:
+    async def cancel_campaign(self, campaign_id: str) -> None:
         """
         Cancel a campaign.
         """
-        self._set_campaign_status(campaign_id, CampaignStatus.CANCELLED)
+        await self._set_campaign_status(campaign_id, CampaignStatus.CANCELLED)
 
-    def suspend_campaign(self, campaign_id: str) -> None:
+    async def suspend_campaign(self, campaign_id: str) -> None:
         """
         Suspend a campaign.
         """
-        self._set_campaign_status(campaign_id, CampaignStatus.SUSPENDED)
+        await self._set_campaign_status(campaign_id, CampaignStatus.SUSPENDED)
 
-    def fail_campaign(self, campaign_id: str) -> None:
+    async def fail_campaign(self, campaign_id: str) -> None:
         """
         Fail a campaign.
         """
-        self._set_campaign_status(campaign_id, CampaignStatus.FAILED)
+        await self._set_campaign_status(campaign_id, CampaignStatus.FAILED)
 
-    def get_campaign(self, campaign_id: str) -> Campaign | None:
+    async def get_campaign(self, campaign_id: str) -> Campaign | None:
         """
         Get a campaign.
         """
-        campaign = self._campaigns.get_one(id=campaign_id)
+        campaign = await self._campaigns.get_one(id=campaign_id)
         return Campaign(**campaign) if campaign else None
 
-    def get_campaigns(self, **query: dict[str, Any]) -> list[Campaign]:
+    async def get_campaigns(self, **query: dict[str, Any]) -> list[Campaign]:
         """
         Query campaigns with arbitrary parameters.
 
         :param query: Dictionary of query parameters.
         """
-        campaigns = self._campaigns.get_all(**query)
+        campaigns = await self._campaigns.get_all(**query)
         return [Campaign(**campaign) for campaign in campaigns]
 
-    def _set_campaign_status(self, campaign_id: str, new_status: CampaignStatus) -> None:
+    async def _set_campaign_status(self, campaign_id: str, new_status: CampaignStatus) -> None:
         """
         Set the status of a campaign.
         """
@@ -129,39 +140,41 @@ class CampaignManager:
         ]:
             update_fields["end_time"] = datetime.now(tz=timezone.utc)
 
-        self._campaigns.update(update_fields, id=campaign_id)
+        await self._campaigns.update_one(update_fields, id=campaign_id)
 
-    def increment_iteration(self, campaign_id: str) -> None:
+    async def increment_iteration(self, campaign_id: str) -> None:
         """
         Increment the iteration count of a campaign.
         """
-        self._campaigns.increment_campaign_iteration(campaign_id)
+        await self._campaigns.increment_campaign_iteration(campaign_id)
 
-    def add_campaign_experiment(self, campaign_id: str, experiment_id: str) -> None:
+    async def add_campaign_experiment(self, campaign_id: str, experiment_id: str) -> None:
         """
         Add an experiment to a campaign.
         """
-        self._campaigns.add_current_experiment(campaign_id, experiment_id)
+        await self._campaigns.add_current_experiment(campaign_id, experiment_id)
 
-    def delete_campaign_experiment(self, campaign_id: str, experiment_id: str) -> None:
+    async def delete_campaign_experiment(self, campaign_id: str, experiment_id: str) -> None:
         """
         Remove an experiment from a campaign.
         """
-        self._campaigns.remove_current_experiment(campaign_id, experiment_id)
+        await self._campaigns.remove_current_experiment(campaign_id, experiment_id)
 
-    def delete_current_campaign_experiments(self, campaign_id: str) -> None:
+    async def delete_current_campaign_experiments(self, campaign_id: str) -> None:
         """
         Delete all current experiments from a campaign.
         """
-        campaign = self.get_campaign(campaign_id)
+        campaign = await self.get_campaign(campaign_id)
 
         for experiment_id in campaign.current_experiment_ids:
-            self._experiments.delete(id=experiment_id)
-            self._tasks.delete(experiment_id=experiment_id)
+            await asyncio.gather(
+                self._experiments.delete_one(id=experiment_id),
+                self._tasks.delete_many(experiment_id=experiment_id),
+            )
 
-        self._campaigns.clear_current_experiments(campaign_id)
+        await self._campaigns.clear_current_experiments(campaign_id)
 
-    def get_campaign_experiment_ids(self, campaign_id: str, status: ExperimentStatus | None = None) -> list[str]:
+    async def get_campaign_experiment_ids(self, campaign_id: str, status: ExperimentStatus | None = None) -> list[str]:
         """
         Get all experiment IDs of a campaign with an optional status filter.
 
@@ -169,10 +182,10 @@ class CampaignManager:
         :param status: Optional status to filter experiments.
         :return: A list of experiment IDs.
         """
-        return self._experiments.get_experiment_ids_by_campaign(campaign_id, status)
+        return await self._experiments.get_experiment_ids_by_campaign(campaign_id, status)
 
-    def set_pareto_solutions(self, campaign_id: str, pareto_solutions: dict[str, Any]) -> None:
+    async def set_pareto_solutions(self, campaign_id: str, pareto_solutions: dict[str, Any]) -> None:
         """
         Set the Pareto solutions for a campaign.
         """
-        self._campaigns.update({"pareto_solutions": pareto_solutions}, id=campaign_id)
+        await self._campaigns.update_one({"pareto_solutions": pareto_solutions}, id=campaign_id)

@@ -1,3 +1,4 @@
+import atexit
 import threading
 from abc import ABC, abstractmethod, ABCMeta
 from enum import Enum
@@ -71,14 +72,8 @@ class BaseDevice(ABC, metaclass=DeviceMeta):
 
         self._lock = threading.Lock()
 
+        atexit.register(self.cleanup)
         self.initialize(initialization_parameters)
-
-    def __del__(self):
-        if "_status" not in self.__dict__:
-            return
-        if self._status and self._status != DeviceStatus.DISABLED:
-            self._status = DeviceStatus.DISABLED
-            self.cleanup()
 
     def initialize(self, initialization_parameters: dict[str, Any]) -> None:
         """
@@ -104,6 +99,9 @@ class BaseDevice(ABC, metaclass=DeviceMeta):
         DISABLED.
         """
         with self._lock:
+            if self._status == DeviceStatus.DISABLED:
+                return
+
             if self._status == DeviceStatus.BUSY:
                 raise EosDeviceCleanupError(
                     f"Device {self._device_id} is busy. Cannot perform cleanup.",
