@@ -4,15 +4,15 @@ services:
       context: .
       dockerfile: mongodb/Dockerfile
       args:
-        - MONGO_INITDB_ROOT_USERNAME=${EOS_MONGO_INITDB_ROOT_USERNAME}
-        - MONGO_INITDB_ROOT_PASSWORD=${EOS_MONGO_INITDB_ROOT_PASSWORD}
+        - MONGO_INITDB_ROOT_USERNAME=${EOS_MONGODB_ROOT_USER}
+        - MONGO_INITDB_ROOT_PASSWORD=${EOS_MONGODB_ROOT_PASSWORD}
     image: eos-mongodb/latest
     container_name: eos-mongodb
     hostname: eos-mongodb
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${EOS_MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${EOS_MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${EOS_MONGODB_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${EOS_MONGODB_ROOT_PASSWORD}
     ports:
       - "27017:27017"
     networks:

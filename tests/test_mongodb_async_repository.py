@@ -68,13 +68,8 @@ class TestMongoDbAsyncRepository:
         ]
         await asyncio.gather(*[repository.create(entity) for entity in entities])
 
-        count, exists, exists_more = await asyncio.gather(
-            repository.count(), repository.exists(count=2), repository.exists(count=3)
-        )
-
+        count = await repository.count()
         assert count == 2
-        assert exists
-        assert not exists_more
 
     @pytest.mark.asyncio
     async def test_delete_many(self, repository):

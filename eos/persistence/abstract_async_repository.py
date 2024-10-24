@@ -16,7 +16,7 @@ class AbstractAsyncRepository(ABC):
         pass
 
     @abstractmethod
-    async def exists(self, count: int = 1, **query: dict) -> bool:
+    async def exists(self, **query: dict) -> bool:
         pass
 
     @abstractmethod

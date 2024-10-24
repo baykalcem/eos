@@ -47,16 +47,15 @@ class MongoDbAsyncRepository(AbstractAsyncRepository):
         """
         return await self._collection.count_documents(session=session, filter=kwargs)
 
-    async def exists(self, count: int = 1, session: AgnosticClientSession | None = None, **kwargs) -> bool:
+    async def exists(self, session: AgnosticClientSession | None = None, **kwargs) -> bool:
         """
-        Check if the number of entities that match the query exist in the collection.
+        Check if an entity exists in the collection.
 
-        :param count: The number of entities to check for.
         :param session: The optional session to use for the operation.
         :param kwargs: Query parameters.
         :return: Whether the entity exists.
         """
-        return await self.count(session=session, **kwargs) >= count
+        return await self._collection.find_one(kwargs, {"_id": 1}, session=session) is not None
 
     async def get_one(self, session: AgnosticClientSession | None = None, **kwargs) -> dict[str, Any]:
         """

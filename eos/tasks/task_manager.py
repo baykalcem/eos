@@ -62,7 +62,7 @@ class TaskManager:
         :param containers: The input containers for the task.
         :param metadata: Additional metadata to be stored with the task.
         """
-        if await self._tasks.get_one(experiment_id=experiment_id, id=task_id):
+        if await self._tasks.exists(experiment_id=experiment_id, id=task_id):
             raise EosTaskExistsError(f"Cannot create task '{task_id}' as a task with that ID already exists.")
 
         task_spec = self._configuration_manager.task_specs.get_spec_by_type(task_type)
