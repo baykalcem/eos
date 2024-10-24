@@ -1,10 +1,11 @@
+import asyncio
 import time
 
 from eos.tasks.base_task import BaseTask
 
 
 class SleepTask(BaseTask):
-    def _execute(
+    async def _execute(
         self,
         devices: BaseTask.DevicesType,
         parameters: BaseTask.ParametersType,
@@ -20,7 +21,7 @@ class SleepTask(BaseTask):
             if self.cancel_requested:
                 self.cancel_requested = False
                 return None
-            time.sleep(1)
+            await asyncio.sleep(1)
             elapsed = time.time() - start_time
 
         return None

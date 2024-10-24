@@ -166,7 +166,7 @@ async def task_manager(setup_lab_experiment, configuration_manager, db_interface
 
 @pytest.fixture(scope="session", autouse=True)
 def ray_cluster():
-    ray.init(namespace="test-eos", ignore_reinit_error=True, resources={"eos-core": 1})
+    ray.init(namespace="test-eos", ignore_reinit_error=True, resources={"eos-core": 1000})
     yield
     ray.shutdown()
 

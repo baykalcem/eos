@@ -20,12 +20,12 @@ class BaseTask(ABC):
         self._experiment_id = experiment_id
         self._task_id = task_id
 
-    def execute(
+    async def execute(
         self, devices: DevicesType, parameters: ParametersType, containers: ContainersType
     ) -> OutputType | None:
         """Execute a task with the given input and return the output."""
         try:
-            output = self._execute(devices, parameters, containers)
+            output = await self._execute(devices, parameters, containers)
 
             output_parameters, output_containers, output_files = ({}, {}, {})
 
@@ -42,7 +42,7 @@ class BaseTask(ABC):
             raise EosTaskExecutionError(f"Error executing task {self._task_id}") from e
 
     @abstractmethod
-    def _execute(
+    async def _execute(
         self, devices: DevicesType, parameters: ParametersType, containers: ContainersType
     ) -> OutputType | None:
         """Implementation for the execution of a task."""

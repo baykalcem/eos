@@ -141,7 +141,7 @@ class DeviceManager:
                     computer=device_config.computer,
                 )
                 devices_to_upsert.append(new_device)
-                self._create_device_actor(new_device)
+                await self._create_device_actor(new_device)
 
         if devices_to_upsert:
             await self._devices.bulk_upsert([device.model_dump() for device in devices_to_upsert])
@@ -160,7 +160,7 @@ class DeviceManager:
         )
         log.debug(f"Restored device actor {device_actor_id}")
 
-    def _create_device_actor(self, device: Device) -> None:
+    async def _create_device_actor(self, device: Device) -> None:
         lab_config = self._configuration_manager.labs[device.lab_id]
         device_config = lab_config.devices[device.id]
         computer_name = device_config.computer.lower()
@@ -194,10 +194,11 @@ class DeviceManager:
             name=device_actor_id,
             num_cpus=0,
             resources=resources,
-        ).remote(device.id, device.lab_id, device.type, initialization_parameters)
+        ).remote(device.id, device.lab_id, device.type)
+        await self._device_actor_handles[device_actor_id].initialize.remote(initialization_parameters)
 
     def _check_device_actors_healthy(self) -> None:
-        status_reports = [actor_handle.report_status.remote() for actor_handle in self._device_actor_handles.values()]
+        status_reports = [actor_handle.get_status.remote() for actor_handle in self._device_actor_handles.values()]
         status_report_to_device_actor_id = {
             status_report: device_actor_id
             for device_actor_id, status_report in zip(self._device_actor_handles.keys(), status_reports, strict=False)

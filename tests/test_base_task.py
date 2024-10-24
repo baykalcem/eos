@@ -9,7 +9,7 @@ from eos.tasks.exceptions import EosTaskExecutionError
 
 
 class ConcreteTask(BaseTask):
-    def _execute(
+    async def _execute(
         self, devices: BaseTask.DevicesType, parameters: BaseTask.ParametersType, containers: BaseTask.ContainersType
     ) -> BaseTask.OutputType | None:
         return {"out_param": parameters["param1"]}, {"container1": containers["container1"]}, {"file": b"content"}
@@ -29,12 +29,13 @@ class TestBaseTask:
         assert task._experiment_id == "exp_id"
         assert task._task_id == "task_id"
 
-    def test_execute_success(self, concrete_task, container):
+    @pytest.mark.asyncio
+    async def test_execute_success(self, concrete_task, container):
         devices = {"device1": Mock(spec=DeviceActorWrapperRegistry)}
         parameters = {"param1": "value1"}
         containers = {"container1": container}
 
-        result = concrete_task.execute(devices, parameters, containers)
+        result = await concrete_task.execute(devices, parameters, containers)
 
         assert isinstance(result, tuple)
         assert len(result) == 3
@@ -45,9 +46,10 @@ class TestBaseTask:
         assert result[1] == {"container1": container}
         assert result[2] == {"file": b"content"}
 
-    def test_execute_failure(self, container):
+    @pytest.mark.asyncio
+    async def test_execute_failure(self, container):
         class FailingTask(BaseTask):
-            def _execute(
+            async def _execute(
                 self,
                 devices: BaseTask.DevicesType,
                 parameters: BaseTask.ParametersType,
@@ -61,11 +63,12 @@ class TestBaseTask:
 
         failing_task = FailingTask("exp_id", "task_id")
         with pytest.raises(EosTaskExecutionError):
-            failing_task.execute(devices, parameters, containers)
+            await failing_task.execute(devices, parameters, containers)
 
-    def test_execute_empty_output(self, concrete_task):
+    @pytest.mark.asyncio
+    async def test_execute_empty_output(self, concrete_task):
         class EmptyOutputTask(BaseTask):
-            def _execute(
+            async def _execute(
                 self,
                 devices: BaseTask.DevicesType,
                 parameters: BaseTask.ParametersType,
@@ -74,13 +77,14 @@ class TestBaseTask:
                 return None
 
         task = EmptyOutputTask("exp_id", "task_id")
-        result = task.execute({}, {}, {})
+        result = await task.execute({}, {}, {})
 
         assert result == ({}, {}, {})
 
-    def test_execute_partial_output(self, concrete_task):
+    @pytest.mark.asyncio
+    async def test_execute_partial_output(self, concrete_task):
         class PartialOutputTask(BaseTask):
-            def _execute(
+            async def _execute(
                 self,
                 devices: BaseTask.DevicesType,
                 parameters: BaseTask.ParametersType,
@@ -89,13 +93,14 @@ class TestBaseTask:
                 return {"out_param": "value"}, None, None
 
         task = PartialOutputTask("exp_id", "task_id")
-        result = task.execute({}, {}, {})
+        result = await task.execute({}, {}, {})
 
         assert result == ({"out_param": "value"}, {}, {})
 
-    def test_automatic_input_container_passthrough(self, concrete_task, container):
+    @pytest.mark.asyncio
+    async def test_automatic_input_container_passthrough(self, concrete_task, container):
         class InputContainerPassthroughTask(BaseTask):
-            def _execute(
+            async def _execute(
                 self,
                 devices: BaseTask.DevicesType,
                 parameters: BaseTask.ParametersType,
@@ -104,6 +109,6 @@ class TestBaseTask:
                 return None
 
         task = InputContainerPassthroughTask("exp_id", "task_id")
-        result = task.execute({}, {}, {"container1": container})
+        result = await task.execute({}, {}, {"container1": container})
 
         assert result == ({}, {"container1": container}, {})

@@ -224,7 +224,7 @@ class TaskExecutor:
         ) -> tuple:
             task = task_class_type(_experiment_id, _task_id)
             devices = DeviceActorWrapperRegistry(_devices_actor_references)
-            return task.execute(devices, _parameters, _containers)
+            return asyncio.run(task.execute(devices, _parameters, _containers))
 
         await self._task_manager.start_task(experiment_id, task_id)
         log.info(f"EXP '{experiment_id}' - Started task '{task_id}'.")
