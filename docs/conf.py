@@ -12,7 +12,6 @@ author = "Angelos Angelopoulos"
 release = "0.4.0"
 
 extensions = [
-    "sphinx.ext.autosectionlabel",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx_design",
