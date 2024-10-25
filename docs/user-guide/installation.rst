@@ -18,6 +18,8 @@ We provide a Docker Compose file that can set up all of these services for you.
 ^^^^^^^^^^^^^^
 PDM is used as the project manager for EOS, making it easier to install dependencies and build it.
 
+See the `PDM documentation <https://pdm-project.org/en/latest/>`_ for more information or if you encounter any issues.
+
 .. tab-set::
 
     .. tab-item:: Linux/Mac
@@ -38,7 +40,20 @@ PDM is used as the project manager for EOS, making it easier to install dependen
 
     git clone https://github.com/UNC-Robotics/eos
 
-3. Install Dependencies
+3. Make a Virtual Environment
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+We create a virtual environment to isolate the dependencies of EOS from the rest of the system. The virtual environment
+is created in a ``env`` directory inside the EOS repository directory. Feel free to use PDM to manage the virtual
+environment instead. Other sections of the documentation will assume that you are using a virtual environment located
+inside the EOS repository directory.
+
+.. code-block:: shell
+
+    cd eos # Navigate to the cloned repository
+    python3 -m venv env
+    source env/bin/activate
+
+4. Install Dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^
 Navigate to the cloned repository and run:
 

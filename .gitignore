@@ -170,4 +170,5 @@ cython_debug/
 /config.yml
 
 /user/*
+!/user/example/
 !/user/.gitkeep

@@ -15,12 +15,18 @@ def create_package(
 ) -> None:
     """Create a new package with the specified name in the user directory."""
     package_dir = Path(user_dir) / name
-    subdirs = ["common", "devices", "tasks", "labs", "experiments"]
+    subdirs = ["devices", "tasks", "labs", "experiments"]
 
     try:
         package_dir.mkdir(parents=True, exist_ok=False)
         for subdir in subdirs:
             (package_dir / subdir).mkdir()
+
+        # Create README.md with just the package name
+        readme_content = f"# {name}"
+        readme_path = package_dir / "README.md"
+        readme_path.write_text(readme_content)
+
         typer.echo(f"Successfully created package '{name}' in {package_dir}")
     except FileExistsError:
         typer.echo(f"Error: Package '{name}' already exists in {user_dir}", err=True)

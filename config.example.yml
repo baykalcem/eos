@@ -1,10 +1,9 @@
 user_dir: ./user
 labs:
-  - lab1
-  - lab2
+  - multiplication_lab
 experiments:
-  - experiment1
-  - experiment2
+  - optimize_multiplication
+
 log_level: INFO
 
 # EOS orchestrator's internal web API server configuration
@@ -12,14 +11,14 @@ web_api:
   host: localhost
   port: 8070
 
-# EOS database configuration
+# EOS database (MongoDB) configuration
 db:
   host: localhost
   port: 27017
   username: ""
   password: ""
 
-# EOS file database configuration
+# EOS file database (MinIO) configuration
 file_db:
   host: localhost
   port: 9004
