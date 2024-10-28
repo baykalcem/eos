@@ -11,7 +11,7 @@ We recommend a central computer that is easily accessible.
     We strongly recommend that the laboratory has its own isolated network for security and performance reasons.
     See :doc:`infrastructure setup <infrastructure_setup>` for more information.
 
-EOS also requires a MongoDB database, a MinIO object storage server, and (for now) Budibase for the web UI.
+EOS also requires a MongoDB database and a MinIO object storage server.
 We provide a Docker Compose file that can set up all of these services for you.
 
 1. Install PDM
@@ -60,15 +60,3 @@ Navigate to the cloned repository and run:
 .. code-block:: shell
 
     pdm install
-
-(Optional) If you wish to contribute to EOS development:
-
-.. code-block:: shell
-
-    pdm install -G dev
-
-(Optional) If you also wish to contribute to the EOS documentation:
-
-.. code-block:: shell
-
-    pdm install -G docs
