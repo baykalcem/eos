@@ -63,7 +63,7 @@ pdm install
 
 ## Configuration
 
-After installation, you need to configure external services such as MongoDB and MinIO as well as EOS itself.
+After installation, you need to configure external services such as PostgreSQL and MinIO as well as EOS itself.
 
 ### 1. Configure External Services
 
@@ -87,7 +87,7 @@ Copy the example configuration file:
 cp config.example.yml config.yml
 ```
 
-Edit `config.yml`. Ensure that credentials are provided for the MongoDB and MinIO services.
+Edit `config.yml`. Ensure that credentials are provided for PostgreSQL and MinIO services.
 
 ## Running
 ### 1. Start External Services
@@ -103,14 +103,8 @@ docker compose up -d
 source env/bin/activate
 ```
 
-### 3. Start the EOS Orchestrator
+### 3. Start EOS
 
 ```shell
 eos orchestrator
-```
-
-### 4. Start the EOS REST API
-
-```shell
-eos api
 ```
