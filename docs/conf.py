@@ -8,7 +8,7 @@
 
 
 project = "eos"
-copyright = "2024, UNC Robotics"
+copyright = "2025, UNC Robotics"
 author = "Angelos Angelopoulos"
 release = "0.7.0"
 
