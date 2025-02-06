@@ -58,7 +58,7 @@ class EntityReader:
     def _read_config(self, file_path: str, config_type: type[EntityConfigType], config_name: str) -> EntityConfigType:
         try:
             config_data = self._render_jinja_yaml(file_path)
-            return self._parse_yaml(yaml.dump(config_data), config_type)
+            return config_type.model_validate(config_data)
         except OSError as e:
             raise EosConfigurationError(f"Error reading configuration file '{file_path}': {e!s}") from e
         except jinja2.exceptions.TemplateError as e:
@@ -91,22 +91,3 @@ class EntityReader:
             raise EosConfigurationError(f"Error parsing YAML in {file_path}: {e}") from e
         except jinja2.exceptions.TemplateError as e:
             raise EosConfigurationError(f"Error in Jinja2 template processing: {e}") from e
-
-    @staticmethod
-    def _parse_yaml(yaml_string: str, model_class: type[T]) -> T:
-        """
-        Parse a YAML string into a Pydantic model instance.
-
-        Args:
-            yaml_string: YAML content as a string
-            model_class: The Pydantic model class to parse into
-
-        Returns:
-            An instance of the provided Pydantic model class
-
-        Raises:
-            ValidationError: If the YAML data doesn't match the model schema
-            yaml.YAMLError: If the YAML string is invalid
-        """
-        yaml_data = yaml.safe_load(yaml_string)
-        return model_class.model_validate(yaml_data)

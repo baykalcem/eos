@@ -5,25 +5,18 @@ import os
 import signal
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 import importlib.metadata
 
 import typer
-import uvicorn
 import yaml
-from litestar import Litestar, Router
-from litestar.di import Provide
-from litestar.logging import LoggingConfig
 
 from eos.configuration.entities.eos_config import EosConfig, WebApiConfig
 from eos.logging.logger import log, LogLevel
-from eos.orchestration.orchestrator import Orchestrator
-from eos.web_api.controllers.campaign_controller import CampaignController
-from eos.web_api.controllers.experiment_controller import ExperimentController
-from eos.web_api.controllers.file_controller import FileController
-from eos.web_api.controllers.lab_controller import LabController
-from eos.web_api.controllers.task_controller import TaskController
-from eos.web_api.exception_handling import global_exception_handler
+
+if TYPE_CHECKING:
+    from eos.orchestration.orchestrator import Orchestrator
+    import uvicorn
 
 
 def load_config(config_file: str) -> EosConfig:
@@ -43,7 +36,7 @@ def parse_list_arg(arg: str | None) -> list[str]:
 
 @contextlib.asynccontextmanager
 async def handle_shutdown(
-    orchestrator: Orchestrator, web_api_server: uvicorn.Server
+    orchestrator: "Orchestrator", web_api_server: "uvicorn.Server"
 ) -> AbstractAsyncContextManager[None]:
     class GracefulExit(SystemExit):
         pass
@@ -76,7 +69,9 @@ async def handle_shutdown(
         log.info("EOS shut down.")
 
 
-async def setup_orchestrator(config: EosConfig) -> Orchestrator:
+async def setup_orchestrator(config: EosConfig) -> "Orchestrator":
+    from eos.orchestration.orchestrator import Orchestrator
+
     orchestrator = Orchestrator(str(config.user_dir), config.db, config.file_db)
     await orchestrator.initialize()
 
@@ -88,7 +83,18 @@ async def setup_orchestrator(config: EosConfig) -> Orchestrator:
     return orchestrator
 
 
-def setup_web_api(orchestrator: Orchestrator, config: WebApiConfig) -> uvicorn.Server:
+def setup_web_api(orchestrator: "Orchestrator", config: WebApiConfig) -> "uvicorn.Server":
+    from litestar import Litestar, Router
+    from litestar.di import Provide
+    from litestar.logging import LoggingConfig
+    import uvicorn
+    from eos.web_api.controllers.campaign_controller import CampaignController
+    from eos.web_api.controllers.experiment_controller import ExperimentController
+    from eos.web_api.controllers.file_controller import FileController
+    from eos.web_api.controllers.lab_controller import LabController
+    from eos.web_api.controllers.task_controller import TaskController
+    from eos.web_api.exception_handling import global_exception_handler
+
     litestar_logging_config = LoggingConfig(
         configure_root_logger=False,
         loggers={"litestar": {"level": "CRITICAL"}},

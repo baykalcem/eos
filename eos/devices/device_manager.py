@@ -170,6 +170,8 @@ class DeviceManager:
         log.debug(f"Restored device actor {device_actor_id}")
 
     async def _create_device_actor(self, device: Device) -> None:
+        log.info(f"Creating device actor for '{device.id}' in lab '{device.lab_id}'...")
+
         lab_config = self._configuration_manager.labs[device.lab_id]
         device_config = lab_config.devices[device.id]
         computer_name = device_config.computer.lower()

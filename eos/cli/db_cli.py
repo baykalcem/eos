@@ -1,18 +1,13 @@
 import asyncio
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 import typer
-import yaml
-from alembic import command
-from alembic.config import Config
-from alembic.util import CommandError
 
 from eos.configuration.entities.eos_config import DatabaseType, EosConfig
-from eos.database.abstract_sql_db_interface import AbstractSqlDbInterface
-from eos.database.postgresql_db_interface import PostgresqlDbInterface
-from eos.database.sqlite_db_interface import SqliteDbInterface
 from eos.logging.logger import log
-from eos.utils.di.di_container import get_di_container
+
+if TYPE_CHECKING:
+    from alembic.config import Config
 
 db_app = typer.Typer(help="Database management commands", no_args_is_help=True)
 
@@ -24,6 +19,10 @@ def load_config(config_path: str) -> EosConfig:
     :param config_path: Path to the configuration YAML file
     :return: Parsed configuration object
     """
+    import yaml
+    from eos.configuration.entities.eos_config import EosConfig
+    from eos.logging.logger import log
+
     config_file = Path(config_path)
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -40,13 +39,20 @@ def load_config(config_path: str) -> EosConfig:
         raise ValueError(f"Invalid configuration: {e}") from e
 
 
-def setup_alembic(eos_config: EosConfig) -> Config:
+def setup_alembic(eos_config: EosConfig) -> "Config":
     """
     Initialize database interface and create Alembic configuration.
 
     :param eos_config: Parsed EOS configuration object
     :return: Configured Alembic Config object
     """
+    from alembic.config import Config
+    from eos.configuration.entities.eos_config import DatabaseType
+    from eos.database.abstract_sql_db_interface import AbstractSqlDbInterface
+    from eos.database.postgresql_db_interface import PostgresqlDbInterface
+    from eos.database.sqlite_db_interface import SqliteDbInterface
+    from eos.utils.di.di_container import get_di_container
+
     # Initialize database interface
     di = get_di_container()
     db_interface = (
@@ -73,6 +79,8 @@ def handle_db_operation(operation_name: str, operation_func: callable, *args, **
     :param args: Positional arguments for the operation
     :param kwargs: Keyword arguments for the operation
     """
+    from alembic.util.exc import CommandError
+
     try:
         operation_func(*args, **kwargs)
     except CommandError as e:
@@ -114,6 +122,8 @@ def migrate(
     :param config: Path to configuration file
     :param autogenerate: Whether to detect schema changes automatically
     """
+    from alembic import command
+
     try:
         eos_config = load_config(config)
         alembic_cfg = setup_alembic(eos_config)
@@ -140,6 +150,8 @@ def upgrade(
     :param config: Path to configuration file
     :param revision: Target revision identifier
     """
+    from alembic import command
+
     try:
         alembic_cfg = setup_alembic(load_config(config))
         handle_db_operation("database upgrade", command.upgrade, alembic_cfg, revision)
@@ -162,6 +174,8 @@ def downgrade(
     :param revision: Target revision identifier
     :param force: Skip confirmation prompt if True
     """
+    from alembic import command
+
     if not force:
         confirmed = typer.confirm(
             f"Are you sure you want to downgrade the database to revision {revision}?", abort=True
@@ -189,6 +203,8 @@ def history(
     :param config: Path to configuration file
     :param verbose: Show detailed history if True
     """
+    from alembic import command
+
     try:
         alembic_cfg = setup_alembic(load_config(config))
         if verbose:
@@ -207,6 +223,8 @@ def current(config: ConfigOption = "./config.yml") -> None:
     :param config: Path to configuration file
     :raises typer.Exit: If current revision display fails
     """
+    from alembic import command
+
     try:
         alembic_cfg = setup_alembic(load_config(config))
         handle_db_operation("show current revision", command.current, alembic_cfg)
@@ -226,6 +244,9 @@ def clear(
     :param config: Path to configuration file
     :param force: Skip confirmation prompt if True
     """
+    from eos.database.postgresql_db_interface import PostgresqlDbInterface
+    from eos.database.sqlite_db_interface import SqliteDbInterface
+
     if not force:
         confirmed = typer.confirm(
             "WARNING: This will delete all data in the database tables. The database structure will be preserved. "

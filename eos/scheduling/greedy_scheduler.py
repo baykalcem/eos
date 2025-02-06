@@ -145,9 +145,8 @@ class GreedyScheduler(AbstractScheduler):
                         )
                         self._allocated_resources.setdefault(experiment_id, {})[task_id] = allocated_request
 
-                    if (
-                        allocated_request is None
-                        or allocated_request is not None
+                    if allocated_request is None or (
+                        allocated_request is not None
                         and allocated_request.status == ResourceRequestAllocationStatus.ALLOCATED
                     ):
                         scheduled_tasks.append(

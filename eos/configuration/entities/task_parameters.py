@@ -100,7 +100,7 @@ class ChoiceTaskParameter(TaskParameter):
 
     @model_validator(mode="after")
     def _validate_choice(self) -> Self:
-        if not self.value or self.value not in self.choices and not is_dynamic_parameter(self.value):
+        if not self.value or (self.value not in self.choices and not is_dynamic_parameter(self.value)):
             raise ValueError(f"Task parameter value '{self.value}' is not one of the choices {self.choices}.")
         return self
 

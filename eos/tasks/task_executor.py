@@ -249,9 +249,8 @@ class TaskExecutor:
         if not context.task_definition.devices and not context.task_definition.input_containers:
             return False
 
-        return (
-            not context.active_resource_request
-            or (
+        return not context.active_resource_request or (
+            (
                 context.active_resource_request
                 and context.active_resource_request.status != ResourceRequestAllocationStatus.ALLOCATED
             )
