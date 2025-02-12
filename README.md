@@ -31,20 +31,20 @@ Documentation is available at [https://unc-robotics.github.io/eos/](https://unc-
 
 ## Installation
 
-### 1. Install PDM
+### 1. Install uv
 
-PDM is used as the project manager for EOS, making it easier to install dependencies and build it.
+uv is used as the dependency manager for EOS. It installs dependencies extremely fast.
 
 #### Linux/Mac
 
 ```shell
-curl -sSL https://pdm-project.org/install-pdm.py | python3 -
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 #### Windows
 
 ```shell
-(Invoke-WebRequest -Uri https://pdm-project.org/install-pdm.py -UseBasicParsing).Content | py -
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 ### 2. Clone the EOS Repository
@@ -58,7 +58,7 @@ git clone https://github.com/UNC-Robotics/eos
 Navigate to the cloned repository and run:
 
 ```shell
-pdm install
+uv sync
 ```
 
 ## Configuration
@@ -72,10 +72,10 @@ We provide a Docker Compose file that can run all external services for you.
 Copy the example environment file:
 
 ```shell
-cp docker/.env.example docker/.env
+cp .env.example .env
 ```
 
-Edit `docker/.env` and provide values for all fields.
+Edit `.env` and provide values for all fields.
 
 ### 2. Configure EOS
 
@@ -93,14 +93,13 @@ Edit `config.yml`. Ensure that credentials are provided for PostgreSQL and MinIO
 ### 1. Start External Services
 
 ```shell
-cd docker
 docker compose up -d
 ```
 
 ### 2. Source the Virtual Environment
 
 ```shell
-source env/bin/activate
+source .venv/bin/activate
 ```
 
 ### 3. Start EOS
