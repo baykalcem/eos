@@ -178,6 +178,10 @@ class ExperimentExecutor:
         await self._scheduler.unregister_experiment(db, self._experiment_id)
         await self._experiment_manager.fail_experiment(db, self._experiment_id)
         self._experiment_status = ExperimentStatus.FAILED
+        # Send email no crash if doesn't get sent
+        # Send email to email module, retries if email send fails until it succeeds
+
+    
 
     async def _process_completed_tasks(self, db: AsyncDbSession) -> None:
         """Process the output of completed tasks."""

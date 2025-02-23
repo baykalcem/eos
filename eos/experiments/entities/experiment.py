@@ -27,6 +27,8 @@ class ExperimentDefinition(BaseModel):
 
     owner: str
 
+    email: str
+
     priority: int = Field(0, ge=0)
 
     dynamic_parameters: dict[str, dict[str, Any]] = Field(default_factory=dict)

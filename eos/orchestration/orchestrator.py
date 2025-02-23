@@ -142,6 +142,10 @@ class Orchestrator(metaclass=Singleton):
         campaign_executor_factory = CampaignExecutorFactory()
         di.register(CampaignExecutorFactory, campaign_executor_factory)
 
+        #async io thread/background task to run to check for emails every +- 5 secs
+        # initialize EmailManager
+        # register EmailManager with di.register(EmailManager, email_manager)
+
         # Orchestrator Modules #######################################
         self._loading = LoadingModule()
         self._labs = LabModule()
@@ -222,6 +226,7 @@ class Orchestrator(metaclass=Singleton):
             if remaining > 0:
                 await asyncio.sleep(remaining)
 
+    
     async def spin_once(self) -> None:
         """Process submitted work."""
         await self._experiments.process_experiment_cancellations()
@@ -230,7 +235,7 @@ class Orchestrator(metaclass=Singleton):
         await self._tasks.process_on_demand_tasks()
         await self._experiments.process_experiments()
         await self._campaigns.process_campaigns()
-
+        #Background tasks runs at some interval
         await self._task_executor.process_tasks()
 
     async def _fail_running_work(self) -> None:
