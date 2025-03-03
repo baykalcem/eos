@@ -233,7 +233,7 @@ def on_demand_task_executor(
 
 
 @pytest.fixture
-def greedy_scheduler(
+def cp_sat_scheduler(
     setup_lab_experiment,
     configuration_manager,
     experiment_manager,
@@ -252,7 +252,7 @@ def experiment_executor_factory(
     experiment_manager,
     task_manager,
     task_executor,
-    greedy_scheduler,
+    cp_sat_scheduler,
     db_interface,
 ):
     return ExperimentExecutorFactory(
@@ -260,7 +260,7 @@ def experiment_executor_factory(
         experiment_manager=experiment_manager,
         task_manager=task_manager,
         task_executor=task_executor,
-        scheduler=greedy_scheduler,
+        scheduler=cp_sat_scheduler,
         db_interface=db_interface,
     )
 

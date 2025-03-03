@@ -19,6 +19,7 @@ from eos.tasks.exceptions import EosTaskExecutionError, EosTaskCancellationError
 from eos.tasks.task_executor import TaskExecutor
 from eos.tasks.task_input_resolver import TaskInputResolver
 from eos.tasks.task_manager import TaskManager
+from eos.notifications.email_manager import EmailManager
 
 
 class ExperimentExecutor:
@@ -29,6 +30,7 @@ class ExperimentExecutor:
         experiment_definition: ExperimentDefinition,
         experiment_graph: ExperimentGraph,
         experiment_manager: ExperimentManager,
+        email_manager: EmailManager,
         task_manager: TaskManager,
         task_executor: TaskExecutor,
         scheduler: AbstractScheduler,
@@ -49,6 +51,8 @@ class ExperimentExecutor:
         self._current_task_definitions: dict[str, TaskDefinition] = {}
         self._task_output_futures: dict[str, asyncio.Task] = {}
         self._experiment_status = None
+
+        self.email_manager = email_manager
 
     async def start_experiment(self, db: AsyncDbSession) -> None:
         """Start the experiment and register the executor with the scheduler."""

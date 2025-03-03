@@ -224,5 +224,3 @@ class CPSATScheduler(AbstractScheduler):
         completed_tasks = await self._experiment_manager.get_completed_tasks(db, experiment_id)
 
         return all(task in completed_tasks for task in all_tasks)
-
-#TODO: Test and tune current implementation

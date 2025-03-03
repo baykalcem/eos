@@ -23,7 +23,7 @@ def experiment_graph(configuration_manager):
 
 
 @pytest.mark.parametrize("setup_lab_experiment", [("abstract_lab", "abstract_experiment")], indirect=True)
-class TestGreedyScheduler:
+class TestCpSatScheduler:
 
     @pytest.mark.asyncio
     async def test_register_experiment(self, cp_sat_scheduler, experiment_graph):

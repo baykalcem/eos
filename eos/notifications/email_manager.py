@@ -22,5 +22,3 @@ def send_email(subject, body, recipient_emails: dict[str, str]):
     except Exception as e:
         print(f"Error: {e}")
 
-# send_email("Test Subject", "This is a test email.", "recipient@example.com")
-# TODO: Integrate this function with the rest of the codebase to send email notifications.

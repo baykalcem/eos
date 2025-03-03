@@ -35,7 +35,7 @@ class TestExperimentExecutor:
         experiment_manager,
         task_manager,
         task_executor,
-        greedy_scheduler,
+        cp_sat_scheduler,
         experiment_graph,
         db_interface,
     ):
@@ -47,7 +47,7 @@ class TestExperimentExecutor:
             experiment_manager=experiment_manager,
             task_manager=task_manager,
             task_executor=task_executor,
-            scheduler=greedy_scheduler,
+            scheduler=cp_sat_scheduler,
             db_interface=db_interface,
         )
 
